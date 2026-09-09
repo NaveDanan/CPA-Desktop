@@ -17,6 +17,13 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
   const body = await contents.executeJavaScript('document.body.innerText');
   assert.ok(body.includes('Dashboard'), 'Existing dashboard rendered after automatic login');
   assert.ok(!contents.getURL().includes('/login'), 'Automatic local management login completed');
+  await contents.executeJavaScript(`new Promise(resolve => {
+    const matches = () => document.querySelector('.sidebar-brand-title')?.textContent === 'CPA for Desktop';
+    if (matches()) { resolve(); return; }
+    const observer = new MutationObserver(() => { if (matches()) { observer.disconnect(); resolve(); } });
+    observer.observe(document.body, { childList: true, subtree: true });
+  })`);
+  assert.equal(await contents.executeJavaScript(`document.querySelector('.sidebar-brand-logo').src`), `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`, 'Sidebar uses the new app logo');
   const management = async (route: string) => {
     const response = await fetch(runtime.origin + '/v0/management/' + route, { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
     assert.equal(response.status, 200, route);

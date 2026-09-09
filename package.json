@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",

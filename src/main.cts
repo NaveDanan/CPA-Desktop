@@ -150,6 +150,11 @@ async function start() {
 
   const contents = window.webContents;
   const trustedUpdateEvent = (event: Electron.IpcMainInvokeEvent) => event.sender === contents && event.senderFrame === contents.mainFrame;
+  const branding = {
+    name: 'CPA for Desktop',
+    logo: `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`,
+  };
+  ipcMain.handle('desktop-branding', (event) => trustedUpdateEvent(event) ? branding : null);
   updates = createUpdateChecker({
     currentVersion: app.getVersion(),
     onChange: (state) => {

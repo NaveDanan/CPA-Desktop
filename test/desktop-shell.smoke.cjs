@@ -17,6 +17,7 @@ app.whenReady().then(async () => {
   let state = { currentVersion: '1.1.0', status: 'available', release: { version: '1.2.0', notes: '## What\'s new\n\n- Automatic GitHub release checks\n- Keep the proxy running in the tray\n\n<script>window.injected = true</script>' }, error: null };
   ipcMain.handle('desktop-update-state', () => state);
   ipcMain.handle('desktop-get-maximize-state', () => false);
+  ipcMain.handle('desktop-branding', () => ({ name: 'CPA for Desktop', logo: '' }));
   ipcMain.handle('desktop-open-release', () => false);
   ipcMain.handle('desktop-check-updates', () => state);
   const window = new BrowserWindow({ width: 1100, height: 750, show: false, frame: false,

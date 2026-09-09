@@ -298,6 +298,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
 
   window.addEventListener('DOMContentLoaded', () => {
     setupDesktopTitlebar();
+    let branding: { name: string; logo: string } | null = null;
 
     const button = document.createElement('button');
     button.id = 'desktop-cli-models';
@@ -309,6 +310,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     const style = document.createElement('style');
     style.textContent = '#desktop-cli-models{background:transparent;text-align:left;font-family:inherit;width:100%}#desktop-cli-models:focus-visible{outline:2px solid var(--primary-active);outline-offset:2px}.sidebar.collapsed #desktop-cli-models .nav-text{display:none}';
     document.head.append(style);
+    style.textContent += ':root[data-theme="dark"] .sidebar-brand-logo{background-color:#f4f3ef}';
     let selected = false;
     let content: HTMLElement;
     let frame: number;
@@ -377,6 +379,15 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     window.addEventListener('resize', schedule);
     style.textContent += '#desktop-cli-content{position:fixed;border:0;z-index:10;background:var(--bg-primary)}.desktop-cli-selected .content{visibility:hidden}.desktop-cli-selected .sidebar a.active{background:transparent;box-shadow:none;border-color:transparent;color:var(--text-secondary)}#desktop-cli-models.active{background:var(--bg-tertiary);color:var(--text-primary)}';
     const attach = () => {
+      if (branding) {
+        const brand = document.querySelector<HTMLElement>('.sidebar-brand');
+        const title = brand?.querySelector<HTMLElement>('.sidebar-brand-title');
+        const logo = brand?.querySelector<HTMLImageElement>('.sidebar-brand-logo');
+        if (brand && brand.title !== branding.name) brand.title = branding.name;
+        if (title && title.textContent !== branding.name) title.textContent = branding.name;
+        if (logo && logo.src !== branding.logo) logo.src = branding.logo;
+        if (logo && logo.alt !== branding.name) logo.alt = branding.name;
+      }
       // Find Controls by its stable route, including when labels are translated or hidden.
       const control = document.querySelector('.sidebar a[href="#/config"]') || document.querySelector('.sidebar a[href="#/settings"]');
       const group = control?.closest('.nav-group') || [...document.querySelectorAll('.sidebar .nav-group')].find((item) => item.querySelector('.nav-group-label')?.textContent.trim().toLowerCase() === 'controls');
@@ -385,6 +396,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     };
     new MutationObserver(attach).observe(document.body, { childList: true, subtree: true });
     attach();
+    ipcRenderer.invoke('desktop-branding').then((value) => { branding = value; attach(); }).catch(() => {});
     new MutationObserver(() => ipcRenderer.send('harness:theme-updated')).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   });
 }
