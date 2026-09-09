@@ -6,11 +6,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { option, prepareConfig, assertPortFree } from './runtime.cjs';
 import { createUpdateChecker, CHECK_INTERVAL } from './updates.cjs';
 import { setupTray } from './tray.cjs';
+import { setupTaskbar } from './taskbar.cjs';
 
 function getAppIcon(resources: string) {
   const candidates = [
-    path.join(__dirname, 'assets', 'icon.ico'),
     path.join(__dirname, 'assets', 'icon.png'),
+    path.join(__dirname, 'assets', 'icon.ico'),
     path.join(resources, 'icon.ico'),
     path.join(resources, 'icon.png'),
     path.join(__dirname, 'resources', 'icon.ico'),
@@ -120,6 +121,9 @@ async function start() {
   });
   if (appIcon && !appIcon.isEmpty()) {
     window.setIcon(appIcon);
+  }
+  if (process.platform === 'win32') {
+    setupTaskbar({ window, app, shell, userData, iconPath: path.join(__dirname, 'assets', 'icon.ico'), updateShortcuts: app.isPackaged && !option(process.argv, '--smoke-test') });
   }
   window.on('maximize', () => {
     if (!window.isDestroyed()) window.webContents.send('desktop-maximize-changed', true);
