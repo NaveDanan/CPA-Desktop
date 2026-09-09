@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Configure CLI</title>
+  <link rel="stylesheet" href="harness.css">
+  <script src="harness-renderer.js" defer></script>
+</head>
+<body><main>
+  <header><div><h1>Configure CLI</h1><p>Choose which GitHub Copilot models appear in each CLI.</p></div><div class="header-actions"><button id="restore" type="button" disabled>Restore Defaults</button><button id="refresh" type="button">Refresh models</button></div></header>
+  <p id="status" role="status" aria-live="polite">Loading available models…</p>
+  <form id="setup">
+    <div id="clients"></div>
+    <section class="models" aria-labelledby="models-title">
+      <div class="model-heading"><h2 id="models-title">Available models <span id="count"></span></h2><label>Find a model<input id="search" type="search" placeholder="Search by name or ID"></label></div>
+      <div class="table-wrap"><table><thead><tr><th scope="col">GitHub Copilot model</th><th scope="col">Codex CLI</th><th scope="col">Claude Code CLI</th></tr></thead><tbody id="model-rows"></tbody></table></div>
+      <p id="empty" hidden>No Copilot models found. Connect a GitHub Copilot account in OAuth, then refresh.</p>
+    </section>
+    <footer><p>Original files are backed up. Keep the desktop proxy running and restart your CLIs after applying. Claude Code model menus require v2.1.242 or later.</p><button id="apply" type="submit" class="primary" disabled>Apply to CLIs</button></footer>
+  </form>
+</main>
+<dialog id="restore-dialog" aria-labelledby="restore-title" aria-describedby="restore-description">
+  <form id="restore-form">
+    <h2 id="restore-title">Restore CLI defaults</h2>
+    <p id="restore-description">Remove CLIProxyAPI connection and model settings from the selected configuration files. Other settings and sign-ins are kept. Files are backed up before saving.</p>
+    <fieldset><legend>Choose CLIs to restore</legend>
+      <label class="restore-choice"><input id="restore-codex" type="checkbox" checked> Codex CLI<small id="restore-codex-path"></small></label>
+      <label class="restore-choice"><input id="restore-claude" type="checkbox" checked> Claude Code CLI<small id="restore-claude-path"></small></label>
+    </fieldset>
+    <p id="restore-status" role="status" aria-live="polite"></p>
+    <div class="dialog-actions"><button id="restore-cancel" type="button" autofocus>Cancel</button><button id="restore-confirm" type="submit" class="primary">Restore Defaults</button></div>
+  </form>
+</dialog>
+</body></html>

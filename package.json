@@ -1,0 +1,79 @@
+{
+  "name": "cliproxy-desktop",
+  "version": "1.0.0",
+  "description": "The CLIProxyAPI management center in a Windows desktop application",
+  "author": "CLIProxyAPI contributors",
+  "license": "MIT",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node scripts/start.cjs",
+    "prepare:resources": "node scripts/prepare.cjs",
+    "dist": "node scripts/package.cjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "smol-toml": "^1.8.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.cliproxy.desktop",
+    "productName": "CLIProxyAPI Desktop",
+    "icon": "assets/icon.ico",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "runtime.cjs",
+      "smoke.cjs",
+      "harness*.cjs",
+      "harness.html",
+      "harness.css",
+      "harness-renderer.js",
+      "harness-bridge.js",
+      "package.json",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/cli-proxy-api.exe",
+        "to": "proxy/cli-proxy-api.exe"
+      },
+      {
+        "from": "resources/management.html",
+        "to": "proxy/static/management.html"
+      },
+      {
+        "from": "resources/ui-provenance.json",
+        "to": "proxy/ui-provenance.json"
+      },
+      {
+        "from": "assets/icon.ico",
+        "to": "proxy/icon.ico"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "proxy/icon.png"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": false,
+      "artifactName": "CLIProxyAPI-Desktop-Setup-${version}.${ext}"
+    }
+  }
+}

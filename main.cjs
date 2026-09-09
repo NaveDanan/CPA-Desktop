@@ -1,0 +1,212 @@
+const { app, BrowserWindow, Menu, dialog, shell, nativeImage, ipcMain } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { setTimeout: delay } = require('node:timers/promises');
+const { option, prepareConfig, assertPortFree } = require('./runtime.cjs');
+
+function getAppIcon(resources) {
+  const candidates = [
+    path.join(__dirname, 'assets', 'icon.ico'),
+    path.join(__dirname, 'assets', 'icon.png'),
+    path.join(resources, 'icon.ico'),
+    path.join(resources, 'icon.png'),
+    path.join(__dirname, 'resources', 'icon.ico'),
+    path.join(__dirname, 'resources', 'icon.png'),
+    ...(app.isPackaged ? [
+      path.join(process.resourcesPath, 'proxy', 'icon.ico'),
+      path.join(process.resourcesPath, 'proxy', 'icon.png'),
+      path.join(process.resourcesPath, 'icon.ico'),
+      path.join(process.resourcesPath, 'icon.png'),
+    ] : []),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      try {
+        const img = nativeImage.createFromPath(candidate);
+        if (!img.isEmpty()) return img;
+      } catch { /* Try next */ }
+    }
+  }
+  return undefined;
+}
+
+app.setName('CLIProxyAPI Desktop');
+app.setPath('userData', path.join(app.getPath('appData'), 'CLIProxyAPI Desktop'));
+const dataOverride = option(process.argv, '--user-data-dir');
+if (dataOverride) app.setPath('userData', path.resolve(dataOverride));
+app.setAppUserModelId('io.cliproxy.desktop');
+let window;
+let backend;
+let exiting = false;
+let bootError;
+let log;
+
+function stopBackend() {
+  if (!backend || backend.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    backend.once('exit', resolve);
+    backend.kill();
+  });
+}
+
+async function waitForBackend(runtime) {
+  for (let attempt = 0; attempt < 240; attempt++) {
+    if (bootError) throw bootError;
+    if (backend.exitCode !== null) throw new Error('The proxy stopped during startup. See proxy.log in the app data folder.');
+    try {
+      const result = await fetch(`${runtime.origin}/v0/management/config`, {
+        headers: { Authorization: `Bearer ${runtime.managementKey}` },
+        signal: AbortSignal.timeout(1000),
+      });
+      await result.arrayBuffer();
+      if (result.ok) return;
+    } catch { /* The listener may not be ready yet. */ }
+    await delay(250);
+  }
+  throw new Error('The proxy did not become ready. See proxy.log in the app data folder.');
+}
+
+async function start() {
+  const userData = app.getPath('userData');
+  fs.mkdirSync(userData, { recursive: true });
+  const trace = (message) => fs.appendFileSync(path.join(userData, 'desktop.log'), `${new Date().toISOString()} ${message}\n`);
+  trace('Preparing configuration');
+  const runtime = prepareConfig(userData, option(process.argv, '--import-config'));
+  trace('Checking local port');
+  await assertPortFree(runtime.config.port);
+  trace('Local port available');
+  const resources = app.isPackaged ? path.join(process.resourcesPath, 'proxy') : path.join(__dirname, 'resources');
+  const staticDir = app.isPackaged ? path.join(resources, 'static') : resources;
+  const binary = path.join(resources, 'cli-proxy-api.exe');
+  if (!fs.existsSync(binary) || !fs.existsSync(path.join(staticDir, 'management.html'))) {
+    throw new Error('Bundled proxy or management page is missing. Run prepare:resources before starting.');
+  }
+  log = fs.createWriteStream(path.join(userData, 'proxy.log'), { flags: 'a' });
+  const env = { ...process.env, MANAGEMENT_STATIC_PATH: staticDir };
+  for (const key of Object.keys(env)) {
+    if (/^(PGSTORE_|GITSTORE_|OBJECTSTORE_)/.test(key) || key === 'MANAGEMENT_PASSWORD') delete env[key];
+  }
+  backend = spawn(binary, ['--config', runtime.configPath], { cwd: userData, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  trace('Proxy process started');
+  backend.stdout.pipe(log, { end: false });
+  backend.stderr.pipe(log, { end: false });
+  backend.on('error', (error) => { bootError = error; });
+  backend.on('exit', () => {
+    if (!exiting && window && !window.isDestroyed()) {
+      dialog.showErrorBox('CLIProxyAPI stopped', 'The proxy stopped unexpectedly. Close and reopen the app. Details are saved in proxy.log.');
+      app.quit();
+    }
+  });
+  await waitForBackend(runtime);
+  trace('Proxy management API ready');
+  const appIcon = getAppIcon(resources);
+  Menu.setApplicationMenu(null);
+  window = new BrowserWindow({
+    width: 1400, height: 940, minWidth: 850, minHeight: 600,
+    title: 'CLIProxyAPI Desktop', show: false, backgroundColor: '#141311',
+    frame: false,
+    icon: appIcon,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false, contextIsolation: true, sandbox: true,
+      additionalArguments: [`--desktop-origin=${runtime.origin}`],
+    },
+  });
+  if (appIcon && !appIcon.isEmpty()) {
+    window.setIcon(appIcon);
+  }
+  window.on('maximize', () => {
+    if (!window.isDestroyed()) window.webContents.send('desktop-maximize-changed', true);
+  });
+  window.on('unmaximize', () => {
+    if (!window.isDestroyed()) window.webContents.send('desktop-maximize-changed', false);
+  });
+
+  ipcMain.on('desktop-minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.minimize();
+  });
+  ipcMain.on('desktop-toggle-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    }
+  });
+  ipcMain.on('desktop-close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.close();
+  });
+  ipcMain.handle('desktop-get-maximize-state', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win && !win.isDestroyed() ? win.isMaximized() : false;
+  });
+
+  const contents = window.webContents;
+  require('./harness-window.cjs').setupHarnessWindow(window, runtime, userData);
+  contents.on('page-favicon-updated', (_event, favicons) => {
+    const embedded = favicons.find((url) => url.startsWith('data:image/'));
+    if (embedded) {
+      try {
+        const icon = nativeImage.createFromDataURL(embedded);
+        if (!icon.isEmpty()) window.setIcon(icon);
+      } catch { /* Ignore unsupported image formats */ }
+    }
+  });
+  const session = contents.session;
+  session.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'));
+  session.webRequest.onBeforeSendHeaders({ urls: [`${runtime.origin}/v0/management/*`] }, (details, callback) => {
+    if (details.webContentsId === contents.id) {
+      details.requestHeaders.Authorization = `Bearer ${runtime.managementKey}`;
+    }
+    callback({ requestHeaders: details.requestHeaders });
+  });
+  const openExternal = (url) => {
+    try {
+      const parsed = new URL(url);
+      if (['https:', 'http:'].includes(parsed.protocol)) void shell.openExternal(url);
+    } catch { /* Invalid or privileged URLs are not opened. */ }
+  };
+  contents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
+  contents.on('will-navigate', (event, url) => {
+    const target = new URL(url);
+    if (target.origin !== runtime.origin || target.pathname !== '/management.html') {
+      event.preventDefault();
+      openExternal(url);
+    }
+  });
+  window.once('ready-to-show', () => { window.show(); window.focus(); });
+  await window.loadURL(`${runtime.origin}/management.html`);
+  trace('Management window loaded');
+  const smokeDir = option(process.argv, '--smoke-test');
+  if (smokeDir) {
+    await require('./smoke.cjs').run({ window, runtime, outputDir: path.resolve(smokeDir), backendPid: backend.pid });
+    app.quit();
+  }
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
+  });
+  app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', (event) => {
+    if (exiting) return;
+    event.preventDefault();
+    exiting = true;
+    void stopBackend().finally(() => { log?.end(); app.quit(); });
+  });
+  app.whenReady().then(start).catch(async (error) => {
+    const smokeDir = option(process.argv, '--smoke-test');
+    if (smokeDir) {
+      fs.mkdirSync(smokeDir, { recursive: true });
+      fs.writeFileSync(path.join(smokeDir, 'failure.txt'), error.stack || error.message);
+    } else {
+      dialog.showErrorBox('Unable to open CLIProxyAPI Desktop', error.message);
+    }
+    app.quit();
+  });
+}
