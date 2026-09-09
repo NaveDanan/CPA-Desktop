@@ -30,6 +30,13 @@ test('desktop main.cjs uses frameless window and sets the app icon', () => {
   assert.ok(main.includes('desktop-close'), 'main.cjs handles desktop-close IPC');
 });
 
+test('desktop app registers hidden Windows login startup', () => {
+  const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.ok(main.includes('openAtLogin: true'), 'main.cjs enables Windows login startup');
+  assert.ok(main.includes("'--background'"), 'main.cjs marks login launches as background launches');
+  assert.ok(main.includes('if (!launchedInBackground)'), 'background launches keep the window hidden');
+});
+
 test('desktop preload.cjs injects custom titlebar and controls matching app theme', () => {
   const preload = fs.readFileSync(path.resolve(__dirname, '../preload.cjs'), 'utf8');
   assert.ok(preload.includes('setupDesktopTitlebar'), 'preload.cjs defines setupDesktopTitlebar');

@@ -39,6 +39,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'CLIProxyAPI Desktop')
 const dataOverride = option(process.argv, '--user-data-dir');
 if (dataOverride) app.setPath('userData', path.resolve(dataOverride));
 app.setAppUserModelId('io.cliproxy.desktop');
+const launchedInBackground = process.argv.includes('--background');
 let window: BrowserWindow;
 let backend: import("node:child_process").ChildProcess;
 let exiting = false;
@@ -107,6 +108,9 @@ async function start() {
   await waitForBackend(runtime);
   trace('Proxy management API ready');
   const appIcon = getAppIcon(resources);
+  if (process.platform === 'win32' && app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true, args: ['--background'] });
+  }
   Menu.setApplicationMenu(null);
   window = new BrowserWindow({
     width: 1400, height: 940, minWidth: 850, minHeight: 600,
@@ -209,7 +213,12 @@ async function start() {
       openExternal(url);
     }
   });
-  window.once('ready-to-show', () => { window.show(); window.focus(); });
+  window.once('ready-to-show', () => {
+    if (!launchedInBackground) {
+      window.show();
+      window.focus();
+    }
+  });
   await window.loadURL(`${runtime.origin}/management.html`);
   trace('Management window loaded');
   void updates.check();
