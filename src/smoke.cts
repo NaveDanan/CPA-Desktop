@@ -1,12 +1,12 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const assert = require('node:assert/strict');
-const { setTimeout: delay } = require('node:timers/promises');
-const { nativeImage, BrowserWindow } = require('electron');
+import fs = require('node:fs');
+import path = require('node:path');
+import assert = require('node:assert/strict');
+import { setTimeout as delay } from 'node:timers/promises';
+import { nativeImage, BrowserWindow } from 'electron';
 
-async function run({ window, runtime, outputDir, backendPid }) {
+async function run({ window, runtime, outputDir, backendPid }: { window: Electron.BrowserWindow; runtime: ReturnType<typeof import("./runtime.cjs").prepareConfig>; outputDir: string; backendPid: number }) {
   fs.mkdirSync(outputDir, { recursive: true });
-  const screenshot = async (name, view) => {
+  const screenshot = async (name: string, view: Pick<Electron.WebContents, "capturePage">) => {
     if (!process.argv.includes('--smoke-no-screenshots')) fs.writeFileSync(path.join(outputDir, name), (await view.capturePage()).toPNG());
   };
   const contents = window.webContents;
@@ -17,7 +17,7 @@ async function run({ window, runtime, outputDir, backendPid }) {
   const body = await contents.executeJavaScript('document.body.innerText');
   assert.ok(body.includes('Dashboard'), 'Existing dashboard rendered after automatic login');
   assert.ok(!contents.getURL().includes('/login'), 'Automatic local management login completed');
-  const management = async (route) => {
+  const management = async (route: string) => {
     const response = await fetch(runtime.origin + '/v0/management/' + route, { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
     assert.equal(response.status, 200, route);
     return response.json();
@@ -85,14 +85,14 @@ async function run({ window, runtime, outputDir, backendPid }) {
     fs.writeFileSync(path.join(outputDir, 'app.ico'), Buffer.concat([header, icon]));
   }
   const links = await contents.executeJavaScript(`Array.from(document.querySelectorAll('a')).map(a => ({ text: a.innerText, href: a.getAttribute('href') }))`);
-  const oauth = links.find((link) => /OAuth/i.test(link.text));
+  const oauth = links.find((link: { text: string; href: string }) => /OAuth/i.test(link.text));
   if (oauth) {
     await contents.executeJavaScript(`location.hash = ${JSON.stringify(oauth.href.replace(/^.*#/, ''))}`);
     await delay(1500);
     assert.ok((await contents.executeJavaScript('document.body.innerText')).includes('GitHub Copilot'), 'Original Copilot login card exists');
     await screenshot('desktop-copilot.png', contents);
   }
-  const accountCount = (auth.files || []).filter((file) => file.provider === 'github-copilot' || file.type === 'github-copilot').length;
+  const accountCount = (auth.files || []).filter((file: AuthAccount) => file.provider === 'github-copilot' || file.type === 'github-copilot').length;
   {
     assert.ok(await contents.executeJavaScript(`!!document.getElementById('desktop-cli-models')`), 'CLI setup button exists');
     assert.ok(await contents.executeJavaScript(`document.getElementById('desktop-cli-models').closest('.nav-group') === document.querySelector('.sidebar a[href="#/config"]').closest('.nav-group')`), 'Configure CLI belongs to Controls');
@@ -128,7 +128,7 @@ async function run({ window, runtime, outputDir, backendPid }) {
         if (await setup.webContents.executeJavaScript(`document.getElementById('status').className !== ''`)) break;
         await delay(100);
       }
-      assert.equal(await setup.webContents.executeJavaScript(`document.getElementById('status').className`), 'success', await setup.webContents.executeJavaScript(`document.getElementById('status').textContent`));
+      assert.equal(await setup.webContents.executeJavaScript(`document.getElementById('status').className`), 'success', await setup.webContents.executeJavaScript(`document.getElementById('status').textContent`) as string);
       assert.ok(fs.existsSync(path.join(configDir, 'config.toml')), 'Codex configuration saved');
       assert.ok(fs.existsSync(path.join(configDir, 'settings.json')), 'Claude configuration saved');
     }
@@ -181,9 +181,9 @@ async function run({ window, runtime, outputDir, backendPid }) {
   }
   fs.writeFileSync(path.join(outputDir, 'result.json'), JSON.stringify({
     passed: true, backendPid, origin: runtime.origin, accountCount, modelCount: models.data?.length || 0,
-    models: (models.data || []).map((model) => model.id),
+    models: (models.data || []).map((model: CopilotModel) => model.id),
     checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
   }, null, 2));
 }
 
-module.exports = { run };
+export { run };

@@ -2,3 +2,8 @@ node_modules/
 dist/
 resources/
 test-results/
+
+# TypeScript output is emitted at the original runtime paths.
+/*.cjs
+/*.js
+/scripts/*.cjs

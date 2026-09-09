@@ -1,11 +1,13 @@
-const { app, BrowserWindow, Menu, dialog, shell, nativeImage, ipcMain } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawn } = require('node:child_process');
-const { setTimeout: delay } = require('node:timers/promises');
-const { option, prepareConfig, assertPortFree } = require('./runtime.cjs');
+import { app, BrowserWindow, Menu, Tray, dialog, shell, nativeImage, ipcMain } from 'electron';
+import fs = require('node:fs');
+import path = require('node:path');
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
+import { option, prepareConfig, assertPortFree } from './runtime.cjs';
+import { createUpdateChecker, CHECK_INTERVAL } from './updates.cjs';
+import { setupTray } from './tray.cjs';
 
-function getAppIcon(resources) {
+function getAppIcon(resources: string) {
   const candidates = [
     path.join(__dirname, 'assets', 'icon.ico'),
     path.join(__dirname, 'assets', 'icon.png'),
@@ -36,11 +38,14 @@ app.setPath('userData', path.join(app.getPath('appData'), 'CLIProxyAPI Desktop')
 const dataOverride = option(process.argv, '--user-data-dir');
 if (dataOverride) app.setPath('userData', path.resolve(dataOverride));
 app.setAppUserModelId('io.cliproxy.desktop');
-let window;
-let backend;
+let window: BrowserWindow;
+let backend: import("node:child_process").ChildProcess;
 let exiting = false;
-let bootError;
-let log;
+let bootError: Error;
+let log: fs.WriteStream;
+let tray: Electron.Tray;
+let updates: ReturnType<typeof createUpdateChecker>;
+let updateTimer: ReturnType<typeof setInterval>;
 
 function stopBackend() {
   if (!backend || backend.exitCode !== null) return Promise.resolve();
@@ -50,7 +55,7 @@ function stopBackend() {
   });
 }
 
-async function waitForBackend(runtime) {
+async function waitForBackend(runtime: ReturnType<typeof prepareConfig>) {
   for (let attempt = 0; attempt < 240; attempt++) {
     if (bootError) throw bootError;
     if (backend.exitCode !== null) throw new Error('The proxy stopped during startup. See proxy.log in the app data folder.');
@@ -70,7 +75,7 @@ async function waitForBackend(runtime) {
 async function start() {
   const userData = app.getPath('userData');
   fs.mkdirSync(userData, { recursive: true });
-  const trace = (message) => fs.appendFileSync(path.join(userData, 'desktop.log'), `${new Date().toISOString()} ${message}\n`);
+  const trace = (message: string) => fs.appendFileSync(path.join(userData, 'desktop.log'), `${new Date().toISOString()} ${message}\n`);
   trace('Preparing configuration');
   const runtime = prepareConfig(userData, option(process.argv, '--import-config'));
   trace('Checking local port');
@@ -83,7 +88,7 @@ async function start() {
     throw new Error('Bundled proxy or management page is missing. Run prepare:resources before starting.');
   }
   log = fs.createWriteStream(path.join(userData, 'proxy.log'), { flags: 'a' });
-  const env = { ...process.env, MANAGEMENT_STATIC_PATH: staticDir };
+  const env: NodeJS.ProcessEnv = { ...process.env, MANAGEMENT_STATIC_PATH: staticDir };
   for (const key of Object.keys(env)) {
     if (/^(PGSTORE_|GITSTORE_|OBJECTSTORE_)/.test(key) || key === 'MANAGEMENT_PASSWORD') delete env[key];
   }
@@ -144,8 +149,27 @@ async function start() {
   });
 
   const contents = window.webContents;
+  const trustedUpdateEvent = (event: Electron.IpcMainInvokeEvent) => event.sender === contents && event.senderFrame === contents.mainFrame;
+  updates = createUpdateChecker({
+    currentVersion: app.getVersion(),
+    onChange: (state) => {
+      if (!window.isDestroyed()) contents.send('desktop-update-state', state);
+    },
+  });
+  ipcMain.handle('desktop-update-state', (event) => trustedUpdateEvent(event) ? updates.getState() : null);
+  ipcMain.handle('desktop-check-updates', (event) => trustedUpdateEvent(event) ? updates.check() : null);
+  ipcMain.handle('desktop-open-release', async (event) => {
+    if (!trustedUpdateEvent(event)) return false;
+    const release = updates.getState().release;
+    if (!release) return false;
+    try { await shell.openExternal(release.url); return true; } catch { return false; }
+  });
+  tray = setupTray({ Tray, Menu, app, window, icon: appIcon, isExiting: () => exiting, checkForUpdates: updates.check });
+  updateTimer = setInterval(() => void updates.check(), CHECK_INTERVAL);
+  updateTimer.unref();
   require('./harness-window.cjs').setupHarnessWindow(window, runtime, userData);
   contents.on('page-favicon-updated', (_event, favicons) => {
+    if (appIcon) return;
     const embedded = favicons.find((url) => url.startsWith('data:image/'));
     if (embedded) {
       try {
@@ -162,7 +186,7 @@ async function start() {
     }
     callback({ requestHeaders: details.requestHeaders });
   });
-  const openExternal = (url) => {
+  const openExternal = (url: string) => {
     try {
       const parsed = new URL(url);
       if (['https:', 'http:'].includes(parsed.protocol)) void shell.openExternal(url);
@@ -179,6 +203,7 @@ async function start() {
   window.once('ready-to-show', () => { window.show(); window.focus(); });
   await window.loadURL(`${runtime.origin}/management.html`);
   trace('Management window loaded');
+  void updates.check();
   const smokeDir = option(process.argv, '--smoke-test');
   if (smokeDir) {
     await require('./smoke.cjs').run({ window, runtime, outputDir: path.resolve(smokeDir), backendPid: backend.pid });
@@ -189,14 +214,14 @@ async function start() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
-  });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', (event) => {
     if (exiting) return;
     event.preventDefault();
     exiting = true;
+    clearInterval(updateTimer);
+    updates?.stop();
+    tray?.destroy();
     void stopBackend().finally(() => { log?.end(); app.quit(); });
   });
   app.whenReady().then(start).catch(async (error) => {

@@ -1,8 +1,8 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const assert = require('node:assert/strict');
-const YAML = require('yaml');
-const { setTimeout: delay } = require('node:timers/promises');
+import fs = require('node:fs');
+import path = require('node:path');
+import assert = require('node:assert/strict');
+import YAML = require('yaml');
+import { setTimeout as delay } from 'node:timers/promises';
 
 async function check() {
   const data = path.join(process.env.APPDATA, 'CLIProxyAPI Desktop');
@@ -14,7 +14,7 @@ async function check() {
     try {
       const response = await fetch(origin + '/v1/models', { headers });
       const body = await response.json();
-      if (body.data?.some((model) => model.id === 'gpt-4.1')) { ready = true; break; }
+      if (body.data?.some((model: CopilotModel) => model.id === 'gpt-4.1')) { ready = true; break; }
     } catch { /* Wait for startup and provider discovery. */ }
     await delay(1000);
   }
@@ -28,7 +28,7 @@ async function check() {
   for (const item of cases) {
     const response = await fetch(origin + item.route, { method: 'POST', headers: { ...headers, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(item.body) });
     const body = await response.json();
-    const answer = body.choices?.[0]?.message?.content || body.output?.flatMap((entry) => entry.content || []).map((entry) => entry.text || '').join('') || body.content?.map((entry) => entry.text || '').join('');
+    const answer = body.choices?.[0]?.message?.content || body.output?.flatMap((entry: { content?: { text?: string }[] }) => entry.content || []).map((entry: { text?: string }) => entry.text || '').join('') || body.content?.map((entry: { text?: string }) => entry.text || '').join('');
     const result = { name: item.name, status: response.status, answer: answer || '', error: body.error?.message || null };
     results.push(result);
     console.log(JSON.stringify(result));

@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -10,15 +10,23 @@
     "start": "node scripts/start.cjs",
     "prepare:resources": "node scripts/prepare.cjs",
     "dist": "node scripts/package.cjs",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prestart": "npm run build",
+    "pretest": "npm run build",
+    "predist": "npm run build",
+    "preprepare:resources": "npm run build"
   },
   "dependencies": {
     "smol-toml": "^1.8.0",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@types/node": "24.13.4",
     "electron": "44.3.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2"
   },
   "build": {
     "appId": "io.cliproxy.desktop",
@@ -31,6 +39,8 @@
       "main.cjs",
       "preload.cjs",
       "runtime.cjs",
+      "updates.cjs",
+      "tray.cjs",
       "smoke.cjs",
       "harness*.cjs",
       "harness.html",
@@ -38,7 +48,8 @@
       "harness-renderer.js",
       "harness-bridge.js",
       "package.json",
-      "assets/**"
+      "assets/icon.ico",
+      "assets/icon.png"
     ],
     "extraResources": [
       {
@@ -65,7 +76,7 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": true,

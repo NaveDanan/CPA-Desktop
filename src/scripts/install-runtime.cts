@@ -1,8 +1,8 @@
 // Optional fallback when a machine's npm download mirror is unavailable.
 // Accept only the official archive matching the installed Electron package.
-const fs = require('node:fs');
-const path = require('node:path');
-const { createHash } = require('node:crypto');
+import fs = require('node:fs');
+import path = require('node:path');
+import { createHash } from 'node:crypto';
 async function install() {
   const electronDir = path.dirname(require.resolve('electron/package.json'));
   const version = require('electron/package.json').version;

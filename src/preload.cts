@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+import { ipcRenderer } from 'electron';
 // Use the management center's existing session format.
 // The real management key stays in the main process, never in browser storage.
 const originArgument = process.argv.find((arg) => arg.startsWith('--desktop-origin='));
@@ -72,6 +72,18 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         height: 100%;
         -webkit-app-region: no-drag;
       }
+      #desktop-updates { position: relative; height: 100%; display: flex; align-items: center; -webkit-app-region: no-drag; }
+      #desktop-update-button { margin: 0 10px; padding: 3px 9px; border: 1px solid var(--border-color, #514b44); border-radius: 6px; background: transparent; color: var(--text-secondary, #c9c3bb); font: inherit; font-size: 11px; cursor: pointer; }
+      #desktop-updates[data-available="true"] #desktop-update-button { color: var(--text-primary, #f6f4f1); background: var(--bg-tertiary, #34302b); font-weight: 600; }
+      #desktop-updates button:focus-visible { outline: 2px solid var(--primary-active, #b8a88e); outline-offset: 2px; }
+      #desktop-update-panel { position: absolute; top: 100%; right: 0; width: min(380px, calc(100vw - 160px)); padding: 16px; border: 1px solid var(--border-color, #514b44); border-radius: 8px; background: var(--bg-secondary, #151412); color: var(--text-primary, #f6f4f1); box-shadow: 0 8px 24px #0003; font-size: 12px; line-height: 1.5; user-select: text; }
+      #desktop-update-panel[hidden] { display: none; }
+      #desktop-update-heading { margin: 0 0 6px; font-size: 13px; }
+      #desktop-update-version { color: var(--text-secondary, #c9c3bb); margin: 0 0 12px; }
+      #desktop-update-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: min(320px, 50vh); overflow-y: auto; margin: 0 0 12px; }
+      .desktop-update-actions { display: flex; gap: 8px; }
+      .desktop-update-actions button { padding: 6px 10px; border: 1px solid var(--border-color, #514b44); border-radius: 5px; color: inherit; background: var(--bg-tertiary, #34302b); font: inherit; cursor: pointer; }
+      .desktop-update-actions button:disabled { opacity: .6; cursor: default; }
       .desktop-control-btn {
         background: transparent;
         border: none;
@@ -155,6 +167,19 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         <span class="desktop-titlebar-center-title">Management Center</span>
       </div>
       <div class="desktop-titlebar-controls">
+        <div id="desktop-updates">
+          <button id="desktop-update-button" type="button" aria-expanded="false" aria-controls="desktop-update-panel">Updates</button>
+          <section id="desktop-update-panel" aria-labelledby="desktop-update-heading" hidden>
+            <h2 id="desktop-update-heading">App updates</h2>
+            <p id="desktop-update-version"></p>
+            <div id="desktop-update-notes" tabindex="0"></div>
+            <div class="desktop-update-actions">
+              <button id="desktop-view-release" type="button" hidden>View release on GitHub</button>
+              <button id="desktop-check-updates" type="button">Check for updates</button>
+            </div>
+            <p id="desktop-update-message" role="status"></p>
+          </section>
+        </div>
         <button id="desktop-btn-minimize" class="desktop-control-btn minimize" type="button" title="Minimize" aria-label="Minimize">
           <svg width="10" height="1" viewBox="0 0 10 1" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect width="10" height="1" fill="currentColor"/>
@@ -169,7 +194,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
             <rect x="0.5" y="2.5" width="7" height="7" stroke="currentColor" stroke-width="1" fill="currentColor" fill-opacity="0.1"/>
           </svg>
         </button>
-        <button id="desktop-btn-close" class="desktop-control-btn close" type="button" title="Close" aria-label="Close">
+        <button id="desktop-btn-close" class="desktop-control-btn close" type="button" title="Close to tray" aria-label="Close to tray">
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
           </svg>
@@ -178,6 +203,59 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     `;
 
     document.body.prepend(titlebar);
+
+    const updates = document.getElementById('desktop-updates');
+    const updateButton = document.getElementById('desktop-update-button');
+    const updatePanel = document.getElementById('desktop-update-panel');
+    const checkButton = document.getElementById('desktop-check-updates') as HTMLButtonElement;
+    const releaseButton = document.getElementById('desktop-view-release');
+    const updateMessage = document.getElementById('desktop-update-message');
+    const showUpdates = (open: boolean) => {
+      updatePanel.hidden = !open;
+      updateButton.setAttribute('aria-expanded', String(open));
+    };
+    updates.addEventListener('pointerenter', () => showUpdates(true));
+    updates.addEventListener('pointerleave', () => {
+      if (!updates.contains(document.activeElement)) showUpdates(false);
+    });
+    updates.addEventListener('focusin', () => showUpdates(true));
+    updates.addEventListener('focusout', (event) => {
+      if (!updates.contains((event.relatedTarget as Node | null))) showUpdates(false);
+    });
+    updateButton.addEventListener('click', () => showUpdates(true));
+    updates.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { updateButton.focus(); showUpdates(false); event.stopPropagation(); }
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!updates.contains(event.target as Node)) showUpdates(false);
+    });
+    const renderUpdate = (state: import("./updates.cjs").UpdateState) => {
+      if (!state) return;
+      const release = state.release;
+      updates.dataset.available = String(Boolean(release));
+      updateButton.textContent = release ? `Update ${release.version} available` :
+        (({ idle: 'Updates', checking: 'Checking updates…', current: 'Up to date', error: 'Check failed' } as Partial<Record<import('./updates.cjs').UpdateState['status'], string>>)[state.status] || 'Updates');
+      document.getElementById('desktop-update-heading').textContent = release ? `What's new in ${release.version}` : 'App updates';
+      document.getElementById('desktop-update-version').textContent = `Installed version: ${state.currentVersion}`;
+      document.getElementById('desktop-update-notes').textContent = release?.notes ||
+        (state.status === 'current' ? 'You have the latest published version. Checks run automatically every six hours.' : 'Checks published releases from NaveDanan/CPA-Desktop on GitHub.');
+      releaseButton.hidden = !release;
+      checkButton.disabled = state.status === 'checking';
+      checkButton.textContent = state.status === 'checking' ? 'Checking…' : 'Check for updates';
+      updateMessage.textContent = state.error || '';
+    };
+    ipcRenderer.on('desktop-update-state', (_event, state) => renderUpdate(state));
+    ipcRenderer.invoke('desktop-update-state').then(renderUpdate).catch(() => {});
+    checkButton.addEventListener('click', async () => {
+      try { renderUpdate(await ipcRenderer.invoke('desktop-check-updates')); }
+      catch { updateMessage.textContent = 'Unable to check for updates. Try again later.'; }
+    });
+    releaseButton.addEventListener('click', async () => {
+      try {
+        if (await ipcRenderer.invoke('desktop-open-release')) return;
+      } catch { /* Report browser launch failures in the update panel. */ }
+      updateMessage.textContent = 'Unable to open GitHub in your browser. Try again.';
+    });
 
     const btnMin = document.getElementById('desktop-btn-minimize');
     const btnMax = document.getElementById('desktop-btn-maximize');
@@ -188,12 +266,12 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     btnClose?.addEventListener('click', () => ipcRenderer.send('desktop-close'));
 
     titlebar.addEventListener('dblclick', (event) => {
-      if (!event.target.closest('.desktop-titlebar-controls')) {
+      if (!(event.target as Element).closest('.desktop-titlebar-controls')) {
         ipcRenderer.send('desktop-toggle-maximize');
       }
     });
 
-    const updateMaximizeState = (isMaximized) => {
+    const updateMaximizeState = (isMaximized: boolean) => {
       if (isMaximized) {
         titlebar.classList.add('maximized');
         if (btnMax) {
@@ -232,8 +310,8 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     style.textContent = '#desktop-cli-models{background:transparent;text-align:left;font-family:inherit;width:100%}#desktop-cli-models:focus-visible{outline:2px solid var(--primary-active);outline-offset:2px}.sidebar.collapsed #desktop-cli-models .nav-text{display:none}';
     document.head.append(style);
     let selected = false;
-    let content;
-    let frame;
+    let content: HTMLElement;
+    let frame: number;
     const pane = document.createElement('iframe');
     pane.id = 'desktop-cli-content';
     pane.title = 'Configure CLI';
@@ -254,7 +332,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     const resize = new ResizeObserver(() => schedule());
     const sync = () => {
       frame = null;
-      const next = document.querySelector('.content');
+      const next = document.querySelector<HTMLElement>('.content');
       if (next !== content) {
         if (content) { resize.unobserve(content); content.inert = false; }
         content = next;
@@ -264,7 +342,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       button.classList.toggle('active', Boolean(visible));
       button.setAttribute('aria-current', visible ? 'page' : 'false');
       document.body.classList.toggle('desktop-cli-selected', Boolean(visible));
-      for (const link of document.querySelectorAll('.sidebar a[aria-current="page"], .sidebar a[data-desktop-current]')) {
+      for (const link of document.querySelectorAll<HTMLElement>('.sidebar a[aria-current="page"], .sidebar a[data-desktop-current]')) {
         if (visible) {
           link.dataset.desktopCurrent = 'true';
           link.removeAttribute('aria-current');
@@ -293,7 +371,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       schedule();
     });
     document.addEventListener('click', (event) => {
-      if (event.target.closest('.sidebar a[href]')) { selected = false; schedule(); }
+      if ((event.target as Element).closest('.sidebar a[href]')) { selected = false; schedule(); }
     }, true);
     window.addEventListener('hashchange', () => { selected = false; schedule(); });
     window.addEventListener('resize', schedule);

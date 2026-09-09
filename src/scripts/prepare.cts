@@ -1,7 +1,7 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const { createHash } = require('node:crypto');
+import fs = require('node:fs');
+import path = require('node:path');
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 const root = path.resolve(__dirname, '../..');
 const resources = path.resolve(__dirname, '../resources');
 const index = process.argv.indexOf('--ui');

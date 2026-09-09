@@ -1,23 +1,23 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const net = require('node:net');
-const { randomBytes } = require('node:crypto');
-const YAML = require('yaml');
+import fs = require('node:fs');
+import path = require('node:path');
+import os = require('node:os');
+import net = require('node:net');
+import { randomBytes } from 'node:crypto';
+import YAML = require('yaml');
 
-function option(args, name) {
+function option(args: string[], name: string) {
   const index = args.indexOf(name);
   return index < 0 ? undefined : args[index + 1];
 }
 
-function resolveAuthDir(value, configPath) {
+function resolveAuthDir(value: string | undefined, configPath: string) {
   const raw = value || '~/.cli-proxy-api';
   if (raw === '~') return os.homedir();
   if (/^~[\\/]/.test(raw)) return path.join(os.homedir(), raw.slice(2));
   return path.resolve(path.dirname(configPath), raw);
 }
 
-function prepareConfig(userData, importPath) {
+function prepareConfig(userData: string, importPath?: string) {
   fs.mkdirSync(userData, { recursive: true });
   const configPath = path.join(userData, 'config.yaml');
   const secretsPath = path.join(userData, 'desktop-secrets.json');
@@ -64,7 +64,7 @@ function prepareConfig(userData, importPath) {
   return { configPath, config, managementKey: secrets.managementKey, origin: `http://127.0.0.1:${config.port}` };
 }
 
-function assertPortFree(port) {
+function assertPortFree(port: number) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once('error', () => reject(new Error(`Port ${port} is already in use. Close the other proxy instance and reopen the desktop app.`)));
@@ -72,4 +72,4 @@ function assertPortFree(port) {
   });
 }
 
-module.exports = { option, prepareConfig, assertPortFree, resolveAuthDir };
+export { option, prepareConfig, assertPortFree, resolveAuthDir };

@@ -1,10 +1,10 @@
-const { ipcMain, dialog } = require('electron');
-const path = require('node:path');
-const fs = require('node:fs');
-const { randomBytes } = require('node:crypto');
-const { createHarnessService } = require('./harness-config.cjs');
+import { ipcMain, dialog } from 'electron';
+import path = require('node:path');
+import fs = require('node:fs');
+import { randomBytes } from 'node:crypto';
+import { createHarnessService } from './harness-config.cjs';
 
-function setupHarnessWindow(parent, runtime, userData) {
+function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<typeof createHarnessService>[0], userData: string) {
   const service = createHarnessService(runtime, userData);
 
   let applying = false;
@@ -13,15 +13,15 @@ function setupHarnessWindow(parent, runtime, userData) {
     const keys = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-hover', 'text-primary', 'text-secondary', 'border-color', 'border-primary', 'primary-color', 'primary-hover', 'primary-active', 'success-badge-text', 'failure-badge-text'];
     return { name: document.documentElement.dataset.theme || 'light', tokens: Object.fromEntries(keys.map(key => ['--' + key, style.getPropertyValue('--' + key).trim()])) };
   })()`);
-  const trusted = (event) => event.sender === parent.webContents && event.senderFrame === parent.webContents.mainFrame && new URL(event.senderFrame.url).origin === runtime.origin && new URL(event.senderFrame.url).pathname === '/management.html';
-  const handle = (name, action) => ipcMain.handle(name, async (event, ...args) => {
+  const trusted = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => event.sender === parent.webContents && event.senderFrame === parent.webContents.mainFrame && new URL(event.senderFrame.url).origin === runtime.origin && new URL(event.senderFrame.url).pathname === '/management.html';
+  const handle = (name: string, action: (...args: any[]) => unknown) => ipcMain.handle(name, async (event, ...args) => {
     if (!trusted(event)) throw new Error('Untrusted configuration request.');
     try { return { value: await action(...args) }; }
     catch (error) { return { error: error.message }; }
   });
   handle('harness:page', () => {
     const nonce = randomBytes(18).toString('base64');
-    const read = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+    const read = (name: string) => fs.readFileSync(path.join(__dirname, name), 'utf8');
     return read('harness.html')
       .replace("script-src 'self'; style-src 'self'", `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
       .replace('<link rel="stylesheet" href="harness.css">', `<style nonce="${nonce}">${read('harness.css')}</style>`)
@@ -59,4 +59,4 @@ function setupHarnessWindow(parent, runtime, userData) {
     } catch { /* The parent may be closing or navigating. */ }
   });
 }
-module.exports = { setupHarnessWindow };
+export { setupHarnessWindow };

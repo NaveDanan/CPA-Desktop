@@ -1,29 +1,34 @@
-const names = { codex: 'Codex CLI', claude: 'Claude Code CLI' };
-let models = [];
-let state = {};
-let defaults = {};
+(() => {
+const names: Record<string, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI' };
+let models: CopilotModel[] = [];
+let state: CliSelections = {};
+let defaults: Record<string, string> = {};
 let busy = false;
-const $ = (id) => document.getElementById(id);
-function applyTheme(theme) {
+type ControlID = 'apply' | 'restore' | 'refresh' | 'restore-confirm' | 'restore-cancel';
+type InputID = 'search' | `${string}-all` | `restore-${string}`;
+function $<T extends string>(id: T): T extends ControlID ? HTMLButtonElement : T extends 'restore-dialog' ? HTMLDialogElement : T extends `${string}-default` ? HTMLSelectElement : T extends InputID ? HTMLInputElement : HTMLElement {
+  return document.getElementById(id) as ReturnType<typeof $<T>>;
+}
+function applyTheme(theme: HarnessTheme) {
   document.documentElement.dataset.theme = theme.name;
   for (const [key, value] of Object.entries(theme.tokens)) if (value) document.documentElement.style.setProperty(key, value);
 }
 window.harness.onTheme(applyTheme);
 void window.harness.theme().then(applyTheme).catch(() => {});
-function status(message, kind = '') {
+function status(message: string, kind = '') {
   $('status').textContent = message; $('status').className = kind;
   if (kind) $('status').scrollIntoView({ block: 'nearest' });
 }
-function element(tag, text, className) { const node = document.createElement(tag); if (text) node.textContent = text; if (className) node.className = className; return node; }
-function selected(key, id) { return state[key].all || state[key].models.includes(id); }
+function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string) { const node = document.createElement(tag); if (text) node.textContent = text; if (className) node.className = className; return node; }
+function selected(key: string, id: string) { return state[key].all || state[key].models.includes(id); }
 function updateApply() {
   const enabled = Object.values(state).filter((item) => item.enabled);
   $('apply').disabled = busy || !models.length || !enabled.length || enabled.some((item) => !item.all && !item.models.length);
   $('restore').disabled = busy || !state.codex || !state.claude;
   $('clients').inert = busy;
-  document.querySelector('.models').inert = busy;
+  document.querySelector<HTMLElement>('.models').inert = busy;
 }
-function updateDefaults(key) {
+function updateDefaults(key: string) {
   const select = $(`${key}-default`);
   select.replaceChildren();
   const available = models.filter((model) => selected(key, model.id));
@@ -37,7 +42,7 @@ function updateDefaults(key) {
   select.value = state[key].defaultModel;
   select.disabled = !state[key].enabled || !available.length;
 }
-async function inspect(key) {
+async function inspect(key: string) {
   try { const result = await window.harness.inspect(key, state[key].path); $(`${key}-path-status`).textContent = result.exists ? 'Existing file · original will be backed up' : 'New file · will be created when applied'; }
   catch (error) { $(`${key}-path-status`).textContent = error.message; }
 }
@@ -158,3 +163,5 @@ $('restore-form').addEventListener('submit', async (event) => {
   }
 });
 void load();
+
+})();

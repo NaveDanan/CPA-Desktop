@@ -1,10 +1,18 @@
 # CLIProxyAPI Desktop
 
-Electron hosts the existing management center and adds a desktop CLI configuration window. It bundles the Go server, starts it hidden, signs the local window into management automatically, and stops its server when the window closes. A second launch focuses the existing window. An occupied server port produces an error instead of starting a duplicate.
+Electron hosts the existing management center and adds a desktop CLI configuration window. It bundles the Go server, starts it hidden, and signs the local window into management automatically. Closing the window hides it in the system tray and keeps the proxy running. Click the tray icon or choose **Open CPA-Desktop** to reopen it. Choose **Quit CPA-Desktop** in the tray menu to stop the proxy and exit. A second launch focuses the existing window. An occupied server port produces an error instead of starting a duplicate.
+
+## Release updates
+
+The app checks [CPA-Desktop releases](https://github.com/NaveDanan/CPA-Desktop/releases) at startup and every six hours, including while running in the tray. You can also check from the title bar or tray menu. Checks are limited to once per minute and require internet access; errors can be retried without interrupting the proxy.
+
+When a newer stable release exists, the title bar displays **Update available** with its version. Hover over it or focus it with the keyboard to read the release notes. **View release on GitHub** opens the release page to download the installer. Updates are not downloaded or installed automatically. Close the app using the tray's Quit command before running an installer.
+
+Publish releases in `NaveDanan/CPA-Desktop` with version tags such as `v1.2.0`, matching the packaged app version in `package.json`. Drafts, prereleases, and versions at or below the installed version do not trigger an update. Release notes come from the GitHub release body and are displayed as text.
 
 ## Build on Windows
 
-Requires Node.js, npm, and Go 1.26 or later on the build machine only.
+Requires Node.js 22.12 or later, npm, and Go 1.26 or later on the build machine only. The desktop source uses TypeScript 7.0.2, pinned in the lockfile.
 
 ```powershell
 cd desktop
@@ -14,7 +22,11 @@ npm test
 npm run dist
 ```
 
-The installer is `dist/CLIProxyAPI-Desktop-Setup-1.0.0.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `dist/CLIProxyAPI-Desktop-Setup-1.2.0.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+
+Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
+
+The management page, CLI configuration HTML and CSS, window dimensions, sandbox settings, and desktop interactions are preserved. This release includes the new CPA app icon. The Go proxy remains the bundled backend.
 
 For first-run migration, launch the installed application with `--import-config C:\path\to\config.yaml`. The app copies the configuration and JSON account files into its own Windows application-data directory. Existing files remain untouched, API keys and the port are preserved, and subsequent starts reuse the migrated data. Do not bundle user credentials into installers.
 

@@ -1,7 +1,7 @@
 // Launch from development tools without inheriting their Electron-as-Node flag.
-const { spawn } = require('node:child_process');
-const path = require('node:path');
-const fs = require('node:fs');
+import { spawn } from 'node:child_process';
+import path = require('node:path');
+import fs = require('node:fs');
 const args = process.argv.slice(2);
 const exeIndex = args.indexOf('--exe');
 let executable = path.resolve(__dirname, '../dist/win-unpacked/CLIProxyAPI Desktop.exe');

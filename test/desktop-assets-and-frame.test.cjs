@@ -16,7 +16,8 @@ test('desktop package.json configures the icon and includes assets', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
   assert.equal(pkg.build?.icon, 'assets/icon.ico', 'build.icon is configured');
   assert.equal(pkg.build?.win?.icon, 'assets/icon.ico', 'build.win.icon is configured');
-  assert.ok(pkg.build?.files?.includes('assets/**'), 'assets are included in build.files');
+  assert.ok(pkg.build?.files?.includes('assets/icon.ico'), 'Windows icon is included in build.files');
+  assert.ok(pkg.build?.files?.includes('assets/icon.png'), 'PNG icon is included in build.files');
 });
 
 test('desktop main.cjs uses frameless window and sets the app icon', () => {

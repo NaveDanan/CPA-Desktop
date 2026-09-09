@@ -1,4 +1,4 @@
-const { spawn } = require('node:child_process');
+import { spawn } from 'node:child_process';
 const env = { ...process.env };
 delete env.ELECTRON_MIRROR;
 delete env.ELECTRON_RUN_AS_NODE;

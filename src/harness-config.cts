@@ -1,9 +1,9 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const { randomUUID } = require('node:crypto');
-const TOML = require('smol-toml');
-const YAML = require('yaml');
+import fs = require('node:fs');
+import path = require('node:path');
+import os = require('node:os');
+import { randomUUID } from 'node:crypto';
+import * as TOML from 'smol-toml';
+import YAML = require('yaml');
 
 function defaultPaths(env = process.env, home = os.homedir()) {
   return {
@@ -12,7 +12,7 @@ function defaultPaths(env = process.env, home = os.homedir()) {
   };
 }
 
-function configPath(value, harness) {
+function configPath(value: unknown, harness: string) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('Choose a configuration file.');
   const expanded = value.trim().replace(/^~(?=[\\/])/, os.homedir());
   if (!path.isAbsolute(expanded)) throw new Error('Use an absolute configuration path.');
@@ -23,7 +23,7 @@ function configPath(value, harness) {
   return resolved;
 }
 
-function readConfig(file, harness) {
+function readConfig(file: string, harness: string) {
   if (!fs.existsSync(file)) return {};
   try {
     const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
@@ -36,7 +36,7 @@ function readConfig(file, harness) {
 }
 
 // Stage every file first, preserve originals, and roll back a partially completed write.
-function writeFiles(files) {
+function writeFiles(files: [string, string][]) {
   const id = randomUUID();
   const staged = [];
   const committed = [];
@@ -66,9 +66,9 @@ function writeFiles(files) {
   }
 }
 
-function buildFiles(selection, models, catalog, connection) {
-  const files = [];
-  const normalized = {};
+function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: CatalogModel[], connection: { origin: string; apiKey: string }) {
+  const files: [string, string][] = [];
+  const normalized: CliSelections = {};
   for (const harness of ['codex', 'claude']) {
     const item = selection[harness];
     if (!item?.enabled) continue;
@@ -121,9 +121,9 @@ function buildFiles(selection, models, catalog, connection) {
 }
 
 // Remove the settings owned by this integration, preserving other CLI preferences.
-function buildRestoreFiles(selection) {
-  const files = [];
-  const restored = {};
+function buildRestoreFiles(selection: Record<string, Pick<CliSelection, "path" | "enabled">>) {
+  const files: [string, string][] = [];
+  const restored: CliSelections = {};
   for (const harness of ['codex', 'claude']) {
     const item = selection[harness];
     if (!item?.enabled) continue;
@@ -148,7 +148,7 @@ function buildRestoreFiles(selection) {
   return { files, restored };
 }
 
-function createHarnessService(runtime, userData, request = fetch) {
+function createHarnessService(runtime: { configPath: string; origin: string; managementKey: string }, userData: string, request = fetch) {
   const preferencesPath = path.join(userData, 'harness-settings.json');
   const preferences = () => fs.existsSync(preferencesPath) ? JSON.parse(fs.readFileSync(preferencesPath, 'utf8')) : {};
   const connection = () => {
@@ -157,7 +157,7 @@ function createHarnessService(runtime, userData, request = fetch) {
     if (typeof apiKey !== 'string' || !apiKey) throw new Error('Add a proxy API key in the management UI first.');
     return { origin: runtime.origin, apiKey };
   };
-  async function get(route, key) {
+  async function get(route: string, key: string): Promise<DiscoveryResponse> {
     const response = await request(runtime.origin + route, { headers: { Authorization: `Bearer ${key}` } });
     if (!response.ok) throw new Error(`Cannot load models from the proxy (${response.status}). Check that the proxy is running.`);
     return response.json();
@@ -165,7 +165,7 @@ function createHarnessService(runtime, userData, request = fetch) {
   async function discover() {
     const auth = await get('/v0/management/auth-files', runtime.managementKey);
     const accounts = (auth.files || []).filter((account) => (account.provider === 'github-copilot' || account.type === 'github-copilot') && !account.disabled);
-    const byID = new Map();
+    const byID = new Map<string, CopilotModel>();
     for (const account of accounts) {
       const result = await get(`/v0/management/auth-files/models?name=${encodeURIComponent(account.name)}`, runtime.managementKey);
       for (const model of result.models || []) byID.set(model.id, model);
@@ -174,17 +174,17 @@ function createHarnessService(runtime, userData, request = fetch) {
   }
   return {
     async load() {
-      const result = { defaults: defaultPaths(), saved: preferences(), models: [] };
+      const result: HarnessLoad = { defaults: defaultPaths(), saved: preferences(), models: [] };
       try { result.models = await discover(); } catch (error) { result.modelError = error.message; }
       return result;
     },
-    inspect(harness, value) {
+    inspect(harness: string, value: string) {
       if (!['codex', 'claude'].includes(harness)) throw new Error('Unknown CLI.');
       const file = configPath(value, harness);
       readConfig(file, harness);
       return { path: file, exists: fs.existsSync(file) };
     },
-    async apply(selection) {
+    async apply(selection: CliSelections) {
       const models = await discover();
       const conn = connection();
       const catalog = selection.codex?.enabled ? (await get('/v1/models?client_version', conn.apiKey)).models || [] : [];
@@ -193,7 +193,7 @@ function createHarnessService(runtime, userData, request = fetch) {
       const backups = writeFiles(files);
       return { backups, paths: Object.values(normalized).map((item) => item.path) };
     },
-    restore(selection) {
+    restore(selection: Record<string, Pick<CliSelection, "path" | "enabled">>) {
       const { files, restored } = buildRestoreFiles(selection);
       files.push([preferencesPath, JSON.stringify({ ...preferences(), ...restored }, null, 2) + '\n']);
       const backups = writeFiles(files);
@@ -202,4 +202,4 @@ function createHarnessService(runtime, userData, request = fetch) {
   };
 }
 
-module.exports = { defaultPaths, configPath, readConfig, buildFiles, buildRestoreFiles, writeFiles, createHarnessService };
+export { defaultPaths, configPath, readConfig, buildFiles, buildRestoreFiles, writeFiles, createHarnessService };
