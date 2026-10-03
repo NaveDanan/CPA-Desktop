@@ -81,7 +81,7 @@ async function start() {
   trace('Preparing configuration');
   const runtime = prepareConfig(userData, option(process.argv, '--import-config'));
   trace('Checking local port');
-  await assertPortFree(runtime.config.port);
+  await assertPortFree(runtime.port);
   trace('Local port available');
   const resources = app.isPackaged ? path.join(process.resourcesPath, 'proxy') : path.join(__dirname, 'resources');
   const staticDir = app.isPackaged ? path.join(resources, 'static') : resources;
@@ -193,7 +193,7 @@ async function start() {
   });
   const session = contents.session;
   session.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'));
-  session.webRequest.onBeforeSendHeaders({ urls: [`${runtime.origin}/v0/management/*`] }, (details, callback) => {
+  session.webRequest.onBeforeSendHeaders({ urls: [`${runtime.origin}/v0/management/*`, `${runtime.origin}/v8/management/*`] }, (details, callback) => {
     if (details.webContentsId === contents.id) {
       details.requestHeaders.Authorization = `Bearer ${runtime.managementKey}`;
     }

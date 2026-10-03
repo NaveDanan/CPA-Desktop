@@ -8,7 +8,7 @@ The app checks [CPA-Desktop releases](https://github.com/NaveDanan/CPA-Desktop/r
 
 When a newer stable release exists, the title bar displays **Update available** with its version. Hover over it or focus it with the keyboard to read the release notes. **View release on GitHub** opens the release page to download the installer. Updates are not downloaded or installed automatically. Close the app using the tray's Quit command before running an installer.
 
-Publish releases in `NaveDanan/CPA-Desktop` with version tags such as `v1.2.2`, matching the packaged app version in `package.json`. Drafts, prereleases, and versions at or below the installed version do not trigger an update. Release notes come from the GitHub release body and are displayed as text.
+Publish releases in `NaveDanan/CPA-Desktop` with version tags such as `v1.2.2`, matching the packaged app version in `package.json`. The checker reads all release pages and selects the highest stable version, even when GitHub's **Latest** label points to an older release. Drafts, prereleases, and versions at or below the installed version do not trigger an update. Release notes come from the GitHub release body and are displayed as text. Failed or inaccessible release requests show an error instead of reporting that the app is up to date.
 
 ## Build on Windows
 

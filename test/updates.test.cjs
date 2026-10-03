@@ -5,6 +5,16 @@ const { newerRelease, createUpdateChecker } = require('../updates.cjs');
 const release = (tag_name = 'v1.2.0', extra = {}) => ({ tag_name, body: '## Changes\n- Tray support', ...extra });
 const response = (data, status = 200) => ({ ok: status === 200, status, json: async () => data });
 
+test('finds v1.2.3 when GitHub still marks installed v1.2.2 as latest', async () => {
+  const checker = createUpdateChecker({ currentVersion: '1.2.2',
+    fetchRelease: async (url) => response(url.endsWith('/latest')
+      ? release('v1.2.2') : [release('v1.2.3'), release('v1.2.2')]),
+  });
+  const state = await checker.check();
+  assert.equal(state.status, 'available');
+  assert.equal(state.release.version, '1.2.3');
+});
+
 test('only newer stable releases are offered with a repository-owned URL', () => {
   for (const tag of ['v1.1.0', 'v1.0.99', 'v0.99.99', 'v1.3.0-beta.1', 'garbage']) {
     assert.equal(newerRelease(release(tag), '1.1.0'), null, tag);
@@ -29,14 +39,14 @@ test('checks coalesce, throttle, and preserve an available release through failu
   const checker = createUpdateChecker({ currentVersion: '1.1.0', now: () => now, onChange: (state) => states.push(state),
     fetchRelease: (url, options) => {
       calls++;
-      assert.equal(url, 'https://api.github.com/repos/NaveDanan/CPA-Desktop/releases/latest');
+      assert.equal(url, 'https://api.github.com/repos/NaveDanan/CPA-Desktop/releases?per_page=100&page=1');
       assert.equal(options.headers.Authorization, undefined);
       return new Promise((resolve) => { resolveFetch = resolve; });
     },
   });
   const first = checker.check();
   assert.equal(checker.check(), first);
-  resolveFetch(response(release()));
+  resolveFetch(response([release()]));
   assert.equal((await first).status, 'available');
   await checker.check();
   assert.equal(calls, 1);
@@ -51,8 +61,10 @@ test('checks coalesce, throttle, and preserve an available release through failu
 
 test('no releases, current versions, malformed responses and offline errors settle safely', async () => {
   for (const [fetchRelease, expected] of [
-    [async () => response(null, 404), 'current'],
-    [async () => response(release('v1.1.0')), 'current'],
+    [async () => response(null, 404), 'error'],
+    [async () => response([]), 'current'],
+    [async () => response([release('v1.1.0')]), 'current'],
+    [async () => response([release('invalid-tag')]), 'error'],
     [async () => response({}), 'error'],
     [async () => { throw new Error('offline'); }, 'error'],
   ]) {
@@ -89,4 +101,28 @@ test('a synchronous network failure can be retried', async () => {
   now = 60000;
   await checker.check();
   assert.equal(calls, 2);
+});
+
+test('checks every page and chooses the highest stable version regardless of release order', async () => {
+  const urls = [];
+  const checker = createUpdateChecker({ currentVersion: '1.2.2', fetchRelease: async (url) => {
+    urls.push(url);
+    return response(url.endsWith('page=1') ? Array.from({ length: 100 }, () => release('v1.2.2')) : [
+      release('v1.9.0'), release('v2.0.0', { draft: true }), release('v1.10.0'),
+      release('v3.0.0', { prerelease: true }), release('v4.0.0-beta.1'),
+      release('not-a-version'), null, release('v1.2.3'),
+    ]);
+  } });
+  const state = await checker.check();
+  assert.equal(state.status, 'available');
+  assert.equal(state.release.version, '1.10.0');
+  assert.equal(urls.length, 2);
+  assert.match(urls[1], /per_page=100&page=2$/);
+});
+
+test('later page failures cannot incorrectly report up to date', async () => {
+  const checker = createUpdateChecker({ currentVersion: '1.2.2', fetchRelease: async (url) =>
+    url.endsWith('page=1') ? response(Array.from({ length: 100 }, () => release('v1.2.2'))) : response(null, 500),
+  });
+  assert.equal((await checker.check()).status, 'error');
 });

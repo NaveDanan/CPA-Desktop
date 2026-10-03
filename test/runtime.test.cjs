@@ -45,6 +45,51 @@ test('migration copies accounts, preserves API keys and port, leaves originals i
   assert.equal(fs.readFileSync(path.join(old, 'auths/account.json'), 'utf8'), account);
 });
 
+test('v8 import keeps nested settings and applies desktop security settings', (t) => {
+  const root = fixture(t);
+  const source = path.join(root, 'source');
+  const target = path.join(root, 'desktop');
+  fs.mkdirSync(path.join(source, 'auths'), { recursive: true });
+  fs.writeFileSync(path.join(source, 'auths/account.json'), JSON.stringify({ type: 'github-copilot' }));
+  const configPath = path.join(source, 'config.yaml');
+  fs.writeFileSync(configPath, YAML.stringify({
+    'config-version': 8,
+    server: { host: '0.0.0.0', port: 8338 },
+    management: { 'secret-key': 'old-key', 'allow-remote': true },
+    access: { 'api-keys': ['test-v8-key'] },
+    oauth: { 'auth-dir': 'auths' },
+  }));
+
+  const result = prepareConfig(target, configPath);
+  assert.equal(result.origin, 'http://127.0.0.1:8338');
+  assert.equal(result.config.server.host, '127.0.0.1');
+  assert.equal(result.config.server.port, 8338);
+  assert.equal(result.config.management['allow-remote'], false);
+  assert.equal(result.config.management['secret-key'], result.managementKey);
+  assert.deepEqual(result.config.access['api-keys'], ['test-v8-key']);
+  assert.equal(result.config.observability.usage['usage-statistics-enabled'], true);
+  assert.equal(result.config.oauth['auth-dir'], path.join(target, 'auths').replaceAll('\\', '/'));
+  assert.ok(fs.existsSync(path.join(target, 'auths/account.json')));
+  const relaunched = prepareConfig(target);
+  assert.equal(relaunched.origin, result.origin);
+  assert.equal(relaunched.managementKey, result.managementKey);
+  assert.deepEqual(relaunched.config.access['api-keys'], ['test-v8-key']);
+});
+
+test('v8 import keeps legacy-only API keys while migrating mixed settings', (t) => {
+  const root = fixture(t);
+  const original = path.join(root, 'original.yaml');
+  fs.writeFileSync(original, YAML.stringify({
+    'config-version': 8,
+    server: { port: 8339 },
+    access: {},
+    'api-keys': ['existing-key'],
+  }));
+  const result = prepareConfig(path.join(root, 'desktop'), original);
+  assert.deepEqual(result.config.access['api-keys'], ['existing-key']);
+  assert.equal(result.port, 8339);
+});
+
 test('relaunch preserves keys and user settings without importing again', (t) => {
   const root = fixture(t);
   const first = prepareConfig(root);

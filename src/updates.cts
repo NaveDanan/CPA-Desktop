@@ -49,15 +49,30 @@ function createUpdateChecker({ currentVersion, fetchRelease = fetch, onChange = 
     publish({ status: 'checking', error: null });
     pending = (async () => {
       try {
-        const response = await fetchRelease(`https://api.github.com/repos/${REPOSITORY}/releases/latest`, {
-          headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'CPA-Desktop' },
-          signal: controller.signal,
-        });
-        if (response.status === 404) return publish({ status: 'current', release: null });
-        if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
-        const data = await response.json();
-        if (!parseVersion(data?.tag_name)) throw new Error('The latest release has an unsupported version tag.');
-        const release = newerRelease(data, currentVersion);
+        if (!parseVersion(currentVersion)) throw new Error('The installed version is invalid.');
+        let release: UpdateState['release'] = null;
+        let hasEntries = false;
+        let hasVersion = false;
+        // GitHub's manually selected "Latest" release can lag behind a newer stable version.
+        // Inspect every page and compare versions instead of relying on that designation or ordering.
+        for (let page = 1; ; page++) {
+          const response = await fetchRelease(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=100&page=${page}`, {
+            headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'CPA-Desktop', 'Cache-Control': 'no-cache' },
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
+          const data = await response.json();
+          if (!Array.isArray(data)) throw new Error('GitHub returned an invalid release list.');
+          hasEntries ||= data.length > 0;
+          for (const item of data) {
+            if (!parseVersion(item?.tag_name)) continue;
+            hasVersion = true;
+            const candidate = newerRelease(item, release?.version || currentVersion);
+            if (candidate) release = candidate;
+          }
+          if (data.length < 100) break;
+        }
+        if (hasEntries && !hasVersion) throw new Error('Published releases have unsupported version tags.');
         return publish({ status: release ? 'available' : 'current', release });
       } catch {
         return publish({ status: 'error', error: 'Unable to check GitHub. Try again later.' });

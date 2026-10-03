@@ -7,8 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 async function check() {
   const data = path.join(process.env.APPDATA, 'CLIProxyAPI Desktop');
   const config = YAML.parse(fs.readFileSync(path.join(data, 'config.yaml'), 'utf8'));
-  const origin = `http://127.0.0.1:${config.port}`;
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config['api-keys'][0]}` };
+  const origin = `http://127.0.0.1:${config.server?.port ?? config.port}`;
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.access?.['api-keys'] ?? config['api-keys'])[0]}` };
   let ready = false;
   for (let attempt = 0; attempt < 90; attempt++) {
     try {
