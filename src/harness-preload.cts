@@ -11,6 +11,7 @@ const api: HarnessAPI = {
   apply: (selection) => invoke('harness:apply', selection),
   restore: (selection) => invoke('harness:restore', selection),
   theme: () => invoke('harness:theme'),
+  usage: (period, start, end) => invoke('harness:usage', period, start, end),
   onTheme: (callback) => ipcRenderer.on('harness:theme-changed', (_event, theme) => callback(theme)),
 };
 contextBridge.exposeInMainWorld('harness', api);

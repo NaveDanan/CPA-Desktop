@@ -185,11 +185,31 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     assert.ok(contents.mainFrame.frames.includes(setup.webContents), 'Returning to CLI setup preserves the form');
     assert.equal(await contents.executeJavaScript("document.getElementById('desktop-cli-content').hidden"), false, 'CLI setup is visible on return');
     assert.equal(await setup.webContents.executeJavaScript("document.getElementById('codex-path').value"), path.join(configDir, 'config.toml'), 'Unsaved configuration path survives tab changes');
+    assert.ok(await contents.executeJavaScript("!!document.getElementById('desktop-copilot-usage')"), 'Copilot usage navigation exists');
+    assert.ok(await contents.executeJavaScript("document.getElementById('desktop-copilot-usage').closest('.nav-group').querySelector('.nav-group-label').textContent.trim().toLowerCase() === 'observe'"), 'Copilot usage belongs to Observe');
+    await contents.executeJavaScript("document.getElementById('desktop-copilot-usage').click()");
+    let usageFrame: Electron.WebFrameMain | undefined;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      usageFrame = contents.mainFrame.frames.find((item) => item.url === 'about:srcdoc' && item !== setup.webContents);
+      if (usageFrame && await usageFrame.executeJavaScript("document.getElementById('models-title') !== null")) break;
+      await delay(100);
+    }
+    assert.ok(usageFrame, 'Copilot usage is embedded in the parent');
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await usageFrame.executeJavaScript("document.getElementById('status').textContent !== 'Loading usage...'")) break;
+      await delay(100);
+    }
+    assert.notEqual(await usageFrame.executeJavaScript("document.getElementById('status').className"), 'error', 'Copilot usage loads through the authenticated management endpoint');
+    await usageFrame.executeJavaScript("document.getElementById('credits').click(); document.getElementById('period').value = 'custom'; document.getElementById('period').dispatchEvent(new Event('change'))");
+    assert.ok(await usageFrame.executeJavaScript("document.getElementById('credits').getAttribute('aria-pressed') === 'true' && !document.getElementById('dates').hidden"), 'Credits and custom dates are selectable');
+    await screenshot('copilot-usage-desktop.png', window);
+    await contents.executeJavaScript("document.getElementById('desktop-cli-models').click()");
+    assert.equal(await setup.webContents.executeJavaScript("document.getElementById('codex-path').value"), path.join(configDir, 'config.toml'), 'Switching from usage preserves unfinished CLI setup');
   }
   fs.writeFileSync(path.join(outputDir, 'result.json'), JSON.stringify({
     passed: true, backendPid, origin: runtime.origin, accountCount, modelCount: models.data?.length || 0,
     models: (models.data || []).map((model: CopilotModel) => model.id),
-    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
+    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'Copilot usage history', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
   }, null, 2));
 }
 

@@ -28,6 +28,26 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
       .replace('<script src="harness-renderer.js" defer></script>', `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
       .replace('</body>', `<script nonce="${nonce}">${read('harness-renderer.js')}</script></body>`);
   });
+  handle('harness:usage-page', () => {
+    const nonce = randomBytes(18).toString('base64');
+    const read = (name: string) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+    return read('usage.html')
+      .replace("script-src 'self'; style-src 'self'", `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
+      .replace('<link rel="stylesheet" href="usage.css">', `<style nonce="${nonce}">${read('usage.css')}</style>`)
+      .replace('<script src="usage-renderer.js" defer></script>', `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
+      .replace('</body>', `<script nonce="${nonce}">${read('usage-renderer.js')}</script></body>`);
+  });
+  handle('harness:usage', async (period: string, start?: string, end?: string) => {
+    if (!['today', 'this_week', 'this_month', 'custom'].includes(period)) throw new Error('Choose a valid period.');
+    if (period === 'custom' && (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || ''))) throw new Error('Choose valid start and end dates.');
+    const query = new URLSearchParams({ period });
+    if (period === 'custom') { query.set('start', start); query.set('end', end); }
+    const response = await fetch(`${runtime.origin}/v8/management/observability/usage/copilot?${query}`, {
+      headers: { Authorization: `Bearer ${runtime.managementKey}` },
+    });
+    if (!response.ok) throw new Error(`Could not load Copilot usage (${response.status}). Check that the proxy is running.`);
+    return response.json();
+  });
   handle('harness:load', () => service.load());
   handle('harness:theme', readTheme);
   handle('harness:inspect', (harness, value) => service.inspect(harness, value));

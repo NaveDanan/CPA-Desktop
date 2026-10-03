@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -48,6 +48,9 @@
       "harness.css",
       "harness-renderer.js",
       "harness-bridge.js",
+      "usage.html",
+      "usage.css",
+      "usage-renderer.js",
       "package.json",
       "assets/icon.ico",
       "assets/icon.png"

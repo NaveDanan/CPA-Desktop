@@ -307,11 +307,16 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     button.title = 'Configure CLI';
     button.setAttribute('aria-label', 'Configure CLI');
     button.innerHTML = '<span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></span><span class="nav-text"><span class="nav-label">Configure CLI</span></span>';
+    const usageButton = document.createElement('button');
+    usageButton.id = 'desktop-copilot-usage';
+    usageButton.type = 'button';
+    usageButton.className = 'nav-item';
+    usageButton.innerHTML = '<span class="nav-text"><span class="nav-label">Copilot usage</span></span>';
     const style = document.createElement('style');
-    style.textContent = '#desktop-cli-models{background:transparent;text-align:left;font-family:inherit;width:100%}#desktop-cli-models:focus-visible{outline:2px solid var(--primary-active);outline-offset:2px}.sidebar.collapsed #desktop-cli-models .nav-text{display:none}';
+    style.textContent = '#desktop-cli-models,#desktop-copilot-usage{background:transparent;text-align:left;font-family:inherit;width:100%}#desktop-cli-models:focus-visible,#desktop-copilot-usage:focus-visible{outline:2px solid var(--primary-active);outline-offset:2px}.sidebar.collapsed #desktop-cli-models .nav-text,.sidebar.collapsed #desktop-copilot-usage .nav-text{display:none}';
     document.head.append(style);
     style.textContent += ':root[data-theme="dark"] .sidebar-brand-logo{background-color:#f4f3ef}';
-    let selected = false;
+    let selected: 'cli' | 'usage' | null = null;
     let content: HTMLElement;
     let frame: number;
     const pane = document.createElement('iframe');
@@ -319,18 +324,26 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     pane.title = 'Configure CLI';
     pane.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
     pane.hidden = true;
-    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme']);
+    const usagePane = document.createElement('iframe');
+    usagePane.id = 'desktop-copilot-content';
+    usagePane.title = 'Copilot usage';
+    usagePane.setAttribute('sandbox', 'allow-scripts');
+    usagePane.hidden = true;
+    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage']);
     window.addEventListener('message', async (event) => {
       const message = event.data;
-      if (event.source !== pane.contentWindow || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args)) return;
+      const source = event.source === pane.contentWindow ? pane : event.source === usagePane.contentWindow ? usagePane : null;
+      if (!source || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args) || (source === usagePane && !['usage', 'theme'].includes(message.name))) return;
       try {
         const result = await ipcRenderer.invoke('harness:' + message.name, ...message.args);
-        pane.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, ...result }, '*');
+        source.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, ...result }, '*');
       } catch (error) {
-        pane.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, error: error.message }, '*');
+        source.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, error: error.message }, '*');
       }
     });
-    ipcRenderer.on('harness:theme-changed', (_event, theme) => pane.contentWindow?.postMessage({ channel: 'harness:response', theme }, '*'));
+    ipcRenderer.on('harness:theme-changed', (_event, theme) => {
+      for (const view of [pane, usagePane]) view.contentWindow?.postMessage({ channel: 'harness:response', theme }, '*');
+    });
     const resize = new ResizeObserver(() => schedule());
     const sync = () => {
       frame = null;
@@ -340,9 +353,11 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         content = next;
         if (content) resize.observe(content);
       }
-      const visible = selected && content && !location.hash.includes('/login');
-      button.classList.toggle('active', Boolean(visible));
-      button.setAttribute('aria-current', visible ? 'page' : 'false');
+      const visible = Boolean(selected && content && !location.hash.includes('/login'));
+      button.classList.toggle('active', visible && selected === 'cli');
+      button.setAttribute('aria-current', visible && selected === 'cli' ? 'page' : 'false');
+      usageButton.classList.toggle('active', visible && selected === 'usage');
+      usageButton.setAttribute('aria-current', visible && selected === 'usage' ? 'page' : 'false');
       document.body.classList.toggle('desktop-cli-selected', Boolean(visible));
       for (const link of document.querySelectorAll<HTMLElement>('.sidebar a[aria-current="page"], .sidebar a[data-desktop-current]')) {
         if (visible) {
@@ -354,30 +369,36 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         }
       }
       if (content) content.inert = Boolean(visible);
-      pane.hidden = !visible;
+      pane.hidden = !visible || selected !== 'cli';
+      usagePane.hidden = !visible || selected !== 'usage';
       if (!visible) return;
       const rect = content.getBoundingClientRect();
       const header = document.querySelector('.main-header')?.getBoundingClientRect();
       const top = Math.max(rect.top, header?.bottom || 34);
       Object.assign(pane.style, { left: `${rect.left}px`, top: `${top}px`, width: `${rect.width}px`, height: `${Math.max(0, innerHeight - top)}px` });
+      Object.assign(usagePane.style, { left: `${rect.left}px`, top: `${top}px`, width: `${rect.width}px`, height: `${Math.max(0, innerHeight - top)}px` });
     };
     const schedule = () => { if (frame == null) frame = requestAnimationFrame(sync); };
-    button.addEventListener('click', async () => {
-      selected = true;
-      if (!pane.parentElement) {
-        document.body.append(pane);
-        const result = await ipcRenderer.invoke('harness:page');
-        if (result.error) { selected = false; schedule(); return; }
-        pane.srcdoc = result.value;
+    const show = async (name: 'cli' | 'usage') => {
+      selected = name;
+      schedule();
+      const view = name === 'cli' ? pane : usagePane;
+      if (!view.parentElement) {
+        document.body.append(view);
+        const result = await ipcRenderer.invoke(name === 'cli' ? 'harness:page' : 'harness:usage-page');
+        if (result.error) { if (selected === name) selected = null; view.remove(); schedule(); return; }
+        view.srcdoc = result.value;
       }
       schedule();
-    });
+    };
+    button.addEventListener('click', () => void show('cli'));
+    usageButton.addEventListener('click', () => void show('usage'));
     document.addEventListener('click', (event) => {
-      if ((event.target as Element).closest('.sidebar a[href]')) { selected = false; schedule(); }
+      if ((event.target as Element).closest('.sidebar a[href]')) { selected = null; schedule(); }
     }, true);
-    window.addEventListener('hashchange', () => { selected = false; schedule(); });
+    window.addEventListener('hashchange', () => { selected = null; schedule(); });
     window.addEventListener('resize', schedule);
-    style.textContent += '#desktop-cli-content{position:fixed;border:0;z-index:10;background:var(--bg-primary)}.desktop-cli-selected .content{visibility:hidden}.desktop-cli-selected .sidebar a.active{background:transparent;box-shadow:none;border-color:transparent;color:var(--text-secondary)}#desktop-cli-models.active{background:var(--bg-tertiary);color:var(--text-primary)}';
+    style.textContent += '#desktop-cli-content,#desktop-copilot-content{position:fixed;border:0;z-index:10;background:var(--bg-primary)}.desktop-cli-selected .content{visibility:hidden}.desktop-cli-selected .sidebar a.active{background:transparent;box-shadow:none;border-color:transparent;color:var(--text-secondary)}#desktop-cli-models.active,#desktop-copilot-usage.active{background:var(--bg-tertiary);color:var(--text-primary)}';
     const attach = () => {
       if (branding) {
         const brand = document.querySelector<HTMLElement>('.sidebar-brand');
@@ -392,6 +413,12 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       const control = document.querySelector('.sidebar a[href="#/config"]') || document.querySelector('.sidebar a[href="#/settings"]');
       const group = control?.closest('.nav-group') || [...document.querySelectorAll('.sidebar .nav-group')].find((item) => item.querySelector('.nav-group-label')?.textContent.trim().toLowerCase() === 'controls');
       if (group && button.parentElement !== group) group.append(button);
+      const usageGroup = [...document.querySelectorAll('.sidebar .nav-group')].find((item) => /^(observe|observability)$/i.test(item.querySelector('.nav-group-label')?.textContent.trim() || '')) || group;
+      if (!usageButton.querySelector('.nav-icon')) {
+        const icon = usageGroup?.querySelector('.nav-icon')?.cloneNode(true);
+        if (icon) usageButton.prepend(icon);
+      }
+      if (usageGroup && usageButton.parentElement !== usageGroup) usageGroup.append(usageButton);
       schedule();
     };
     new MutationObserver(attach).observe(document.body, { childList: true, subtree: true });

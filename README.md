@@ -22,7 +22,7 @@ npm test
 npm run dist
 ```
 
-The installer is `dist/CLIProxyAPI-Desktop-Setup-1.2.2.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `dist/CLIProxyAPI-Desktop-Setup-1.2.5.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 
@@ -33,6 +33,15 @@ For first-run migration, launch the installed application with `--import-config 
 The desktop app binds only to `127.0.0.1`, uses its own management key, and disables automatic management-page downloads so the packaged interface stays the same. The renderer is sandboxed and does not receive the actual management key. External sign-in links open in the default browser.
 
 To validate the packaged window, pass `--smoke-test C:\path\to\results`. This checks the dashboard, session, model listing, credential listing, and renderer isolation, saves screenshots, and exits. `--user-data-dir` can isolate test data.
+
+## Copilot usage
+
+Select **Copilot usage** in the desktop sidebar to view model request and token
+counts by day. Filter by today, this week, this month, or inclusive custom UTC
+dates, and switch the estimated cost between USD and GitHub AI credits.
+Unpriced requests stay visible but do not contribute to the cost estimate.
+The history starts when this version of the proxy begins recording requests;
+it does not include usage made directly in GitHub or other applications.
 
 ## Configure Copilot models in coding CLIs
 

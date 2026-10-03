@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Copilot usage</title>
+  <link rel="stylesheet" href="usage.css">
+  <script src="usage-renderer.js" defer></script>
+</head>
+<body><main>
+  <header><h1>Copilot usage</h1><button id="refresh" type="button">Refresh</button></header>
+  <div class="controls">
+    <label>Period<select id="period"><option value="today">Today</option><option value="this_week">This week</option><option value="this_month">This month</option><option value="custom">Custom dates</option></select></label>
+    <div id="dates" hidden><label>From<input id="start" type="date"></label><label>Through<input id="end" type="date"></label></div>
+    <fieldset><legend>Cost unit</legend><button id="usd" type="button" aria-pressed="true">USD</button><button id="credits" type="button" aria-pressed="false">AI credits</button></fieldset>
+  </div>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p id="totals" class="totals" hidden></p>
+  <section id="models-section" aria-labelledby="models-title" hidden><h2 id="models-title">By model</h2><div class="table-wrap"><table><thead><tr><th scope="col">Model</th><th scope="col">Requests</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Total tokens</th><th scope="col" class="cost-heading">Estimated cost</th></tr></thead><tbody id="models"></tbody></table></div></section>
+  <section id="history-section" aria-labelledby="history-title" hidden><h2 id="history-title">Daily usage</h2><div id="trend" class="trend" role="img" aria-label="Daily estimated cost"></div><div class="table-wrap"><table><thead><tr><th scope="col">UTC date</th><th scope="col">Model</th><th scope="col">Requests</th><th scope="col">Total tokens</th><th scope="col" class="cost-heading">Estimated cost</th></tr></thead><tbody id="history"></tbody></table></div></section>
+  <p class="note">Estimates use GitHub's published model token rates at the time each request was recorded. 1 AI credit = $0.01. Unpriced requests are excluded from cost; your GitHub bill may differ.</p>
+</main></body></html>
