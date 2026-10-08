@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -40,6 +40,8 @@
       "preload.cjs",
       "runtime.cjs",
       "updates.cjs",
+      "update-installer.cjs",
+      "src/update-runner.ps1",
       "tray.cjs",
       "taskbar.cjs",
       "smoke.cjs",

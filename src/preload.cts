@@ -76,13 +76,17 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       #desktop-update-button { margin: 0 10px; padding: 3px 9px; border: 1px solid var(--border-color, #514b44); border-radius: 6px; background: transparent; color: var(--text-secondary, #c9c3bb); font: inherit; font-size: 11px; cursor: pointer; }
       #desktop-updates[data-available="true"] #desktop-update-button { color: var(--text-primary, #f6f4f1); background: var(--bg-tertiary, #34302b); font-weight: 600; }
       #desktop-updates button:focus-visible { outline: 2px solid var(--primary-active, #b8a88e); outline-offset: 2px; }
-      #desktop-update-panel { position: absolute; top: 100%; right: 0; width: min(380px, calc(100vw - 160px)); padding: 16px; border: 1px solid var(--border-color, #514b44); border-radius: 8px; background: var(--bg-secondary, #151412); color: var(--text-primary, #f6f4f1); box-shadow: 0 8px 24px #0003; font-size: 12px; line-height: 1.5; user-select: text; }
+      #desktop-update-panel { position: absolute; top: 100%; right: 0; width: min(380px, calc(100vw - 160px)); max-height: calc(100vh - 50px); overflow-y: auto; box-sizing: border-box; padding: 16px; border: 1px solid var(--border-color, #514b44); border-radius: 8px; background: var(--bg-secondary, #151412); color: var(--text-primary, #f6f4f1); box-shadow: 0 8px 24px #0003; font-size: 12px; line-height: 1.5; user-select: text; }
       #desktop-update-panel[hidden] { display: none; }
       #desktop-update-heading { margin: 0 0 6px; font-size: 13px; }
       #desktop-update-version { color: var(--text-secondary, #c9c3bb); margin: 0 0 12px; }
       #desktop-update-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: min(320px, 50vh); overflow-y: auto; margin: 0 0 12px; }
-      .desktop-update-actions { display: flex; gap: 8px; }
+      #desktop-update-progress { width: 100%; height: 8px; accent-color: var(--text-primary, #f6f4f1); }
+      #desktop-update-progress-label { margin: 4px 0 12px; color: var(--text-secondary, #c9c3bb); font-variant-numeric: tabular-nums; }
+      .desktop-update-actions { display: flex; flex-wrap: wrap; gap: 8px; }
       .desktop-update-actions button { padding: 6px 10px; border: 1px solid var(--border-color, #514b44); border-radius: 5px; color: inherit; background: var(--bg-tertiary, #34302b); font: inherit; cursor: pointer; }
+      .desktop-update-actions button:hover:not(:disabled) { border-color: var(--text-secondary, #c9c3bb); }
+      #desktop-download-update, #desktop-install-update { font-weight: 600; }
       .desktop-update-actions button:disabled { opacity: .6; cursor: default; }
       .desktop-control-btn {
         background: transparent;
@@ -173,7 +177,12 @@ if (origin && location.origin === origin && location.pathname === '/management.h
             <h2 id="desktop-update-heading">App updates</h2>
             <p id="desktop-update-version"></p>
             <div id="desktop-update-notes" tabindex="0"></div>
+            <progress id="desktop-update-progress" max="100" value="0" aria-label="Update download" hidden></progress>
+            <p id="desktop-update-progress-label" hidden></p>
             <div class="desktop-update-actions">
+              <button id="desktop-download-update" type="button" hidden>Download update</button>
+              <button id="desktop-install-update" type="button" hidden>Restart and install</button>
+              <button id="desktop-cancel-update" type="button" hidden>Cancel download</button>
               <button id="desktop-view-release" type="button" hidden>View release on GitHub</button>
               <button id="desktop-check-updates" type="button">Check for updates</button>
             </div>
@@ -209,7 +218,13 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     const updatePanel = document.getElementById('desktop-update-panel');
     const checkButton = document.getElementById('desktop-check-updates') as HTMLButtonElement;
     const releaseButton = document.getElementById('desktop-view-release');
+    const downloadButton = document.getElementById('desktop-download-update') as HTMLButtonElement;
+    const installButton = document.getElementById('desktop-install-update') as HTMLButtonElement;
+    const cancelButton = document.getElementById('desktop-cancel-update') as HTMLButtonElement;
+    const progress = document.getElementById('desktop-update-progress') as HTMLProgressElement;
+    const progressLabel = document.getElementById('desktop-update-progress-label');
     const updateMessage = document.getElementById('desktop-update-message');
+    let focusedUpdateAction: HTMLButtonElement | null = null;
     const showUpdates = (open: boolean) => {
       updatePanel.hidden = !open;
       updateButton.setAttribute('aria-expanded', String(open));
@@ -220,6 +235,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     });
     updates.addEventListener('focusin', () => showUpdates(true));
     updates.addEventListener('focusout', (event) => {
+      if (focusedUpdateAction) return;
       if (!updates.contains((event.relatedTarget as Node | null))) showUpdates(false);
     });
     updateButton.addEventListener('click', () => showUpdates(true));
@@ -232,17 +248,47 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     const renderUpdate = (state: import("./updates.cjs").UpdateState) => {
       if (!state) return;
       const release = state.release;
+      const downloading = state.status === 'downloading';
+      const downloaded = state.status === 'downloaded';
+      const installing = state.status === 'installing';
+      const focusedAction = [downloadButton, installButton, cancelButton].find((button) => button === document.activeElement) || focusedUpdateAction;
+      focusedUpdateAction = focusedAction || null;
       updates.dataset.available = String(Boolean(release));
-      updateButton.textContent = release ? `Update ${release.version} available` :
+      updateButton.textContent = downloading ? 'Downloading update…' : downloaded ? 'Update ready to install' : installing ? 'Installing update…' : release ? `Update ${release.version} available` :
         (({ idle: 'Updates', checking: 'Checking updates…', current: 'Up to date', error: 'Check failed' } as Partial<Record<import('./updates.cjs').UpdateState['status'], string>>)[state.status] || 'Updates');
       document.getElementById('desktop-update-heading').textContent = release ? `What's new in ${release.version}` : 'App updates';
       document.getElementById('desktop-update-version').textContent = `Installed version: ${state.currentVersion}`;
       document.getElementById('desktop-update-notes').textContent = release?.notes ||
         (state.status === 'current' ? 'You have the latest published version. Checks run automatically every six hours.' : 'Checks published releases from NaveDanan/CPA-Desktop on GitHub.');
       releaseButton.hidden = !release;
+      downloadButton.hidden = !release?.installer || !state.canInstall || downloaded || installing;
+      downloadButton.disabled = downloading || state.status === 'checking';
+      downloadButton.textContent = downloading ? 'Downloading…' : 'Download update';
+      installButton.hidden = !downloaded && !installing;
+      installButton.disabled = installing;
+      installButton.textContent = installing ? 'Restarting…' : 'Restart and install';
+      cancelButton.hidden = !downloading;
+      cancelButton.disabled = false;
+      progress.hidden = !downloading;
+      progressLabel.hidden = !downloading;
+      if (downloading && state.progress) {
+        const percent = Math.min(100, Math.floor(state.progress.received / state.progress.total * 100));
+        progress.value = percent;
+        progressLabel.textContent = `${percent}% · ${(state.progress.received / 1048576).toFixed(1)} of ${(state.progress.total / 1048576).toFixed(1)} MB`;
+      }
+      checkButton.hidden = downloading || downloaded || installing;
       checkButton.disabled = state.status === 'checking';
       checkButton.textContent = state.status === 'checking' ? 'Checking…' : 'Check for updates';
-      updateMessage.textContent = state.error || '';
+      updateMessage.textContent = state.error || (downloading ? 'Downloading the update. You can keep using the app.' :
+        downloaded ? 'Update downloaded and verified. Restart and install will briefly stop the proxy and interrupt active requests. Your settings and accounts are kept.' :
+        installing ? 'Closing the app to install the update. It will reopen when installation finishes.' :
+        release && !state.canInstall ? 'In-app installation is available in the installed Windows app. Download the installer from GitHub.' :
+        release && !release.installer ? 'The installer is not available for in-app updating. View the release on GitHub, or check again later.' : '');
+      if (focusedAction && (focusedAction.hidden || focusedAction.disabled)) {
+        const nextAction = [installButton, cancelButton, downloadButton].find((button) => !button.hidden && !button.disabled);
+        (nextAction || updateButton).focus();
+      }
+      focusedUpdateAction = null;
     };
     ipcRenderer.on('desktop-update-state', (_event, state) => renderUpdate(state));
     ipcRenderer.invoke('desktop-update-state').then(renderUpdate).catch(() => {});
@@ -250,6 +296,21 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       try { renderUpdate(await ipcRenderer.invoke('desktop-check-updates')); }
       catch { updateMessage.textContent = 'Unable to check for updates. Try again later.'; }
     });
+    const runUpdateAction = async (button: HTMLButtonElement, channel: string, failureMessage: string) => {
+      focusedUpdateAction = document.activeElement === button ? button : null;
+      button.disabled = true;
+      try { renderUpdate(await ipcRenderer.invoke(channel)); }
+      catch {
+        const restoreFocus = focusedUpdateAction === button;
+        focusedUpdateAction = null;
+        button.disabled = false;
+        if (restoreFocus) button.focus();
+        updateMessage.textContent = failureMessage;
+      }
+    };
+    downloadButton.addEventListener('click', () => void runUpdateAction(downloadButton, 'desktop-download-update', 'Unable to download the update. Try again.'));
+    cancelButton.addEventListener('click', () => void runUpdateAction(cancelButton, 'desktop-cancel-update', 'Unable to cancel the download. Try again.'));
+    installButton.addEventListener('click', () => void runUpdateAction(installButton, 'desktop-install-update', 'Unable to start installation. Try again or use the GitHub installer.'));
     releaseButton.addEventListener('click', async () => {
       try {
         if (await ipcRenderer.invoke('desktop-open-release')) return;

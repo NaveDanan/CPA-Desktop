@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { option, prepareConfig, assertPortFree } from './runtime.cjs';
 import { createUpdateChecker, CHECK_INTERVAL } from './updates.cjs';
+import { cleanupUpdateCache, takeInstallError, launchUpdateInstaller } from './update-installer.cjs';
 import { setupTray } from './tray.cjs';
 import { setupTaskbar } from './taskbar.cjs';
 
@@ -165,14 +166,43 @@ async function start() {
     logo: `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`,
   };
   ipcMain.handle('desktop-branding', (event) => trustedUpdateEvent(event) ? branding : null);
+  const cacheDir = path.join(userData, 'updates');
+  const canInstall = app.isPackaged && process.platform === 'win32' && !option(process.argv, '--smoke-test');
+  let installationError: string | null = null;
+  if (canInstall) {
+    try {
+      await cleanupUpdateCache(cacheDir);
+      installationError = await takeInstallError(cacheDir);
+    } catch {
+      installationError = 'Unable to prepare app updates. Check that the app data folder is writable and restart the app.';
+    }
+  }
   updates = createUpdateChecker({
     currentVersion: app.getVersion(),
+    installationError,
+    ...(canInstall ? {
+      cacheDir,
+      installUpdate: async (update) => {
+        if (exiting) throw new Error('The app is shutting down.');
+        try {
+          await launchUpdateInstaller({ ...update, cacheDir, appPath: process.execPath, userData });
+        } catch (error) {
+          trace(`Update helper failed: ${(error as Error).message}`);
+          throw error;
+        }
+        // Let the checker finish handing off the installer before shutdown cleans its cache.
+        setImmediate(() => app.quit());
+      },
+    } : {}),
     onChange: (state) => {
       if (!window.isDestroyed()) contents.send('desktop-update-state', state);
     },
   });
   ipcMain.handle('desktop-update-state', (event) => trustedUpdateEvent(event) ? updates.getState() : null);
   ipcMain.handle('desktop-check-updates', (event) => trustedUpdateEvent(event) ? updates.check() : null);
+  ipcMain.handle('desktop-download-update', (event) => trustedUpdateEvent(event) && !exiting ? updates.download() : null);
+  ipcMain.handle('desktop-cancel-update', (event) => trustedUpdateEvent(event) && !exiting ? updates.cancelDownload() : null);
+  ipcMain.handle('desktop-install-update', (event) => trustedUpdateEvent(event) && !exiting ? updates.install() : null);
   ipcMain.handle('desktop-open-release', async (event) => {
     if (!trustedUpdateEvent(event)) return false;
     const release = updates.getState().release;
@@ -240,9 +270,8 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     exiting = true;
     clearInterval(updateTimer);
-    updates?.stop();
     tray?.destroy();
-    void stopBackend().finally(() => { log?.end(); app.quit(); });
+    void Promise.allSettled([updates?.stop(), stopBackend()]).then(() => { log?.end(); app.quit(); });
   });
   app.whenReady().then(start).catch(async (error) => {
     const smokeDir = option(process.argv, '--smoke-test');
