@@ -112,6 +112,10 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     const setup = { webContents: contents.mainFrame.frames.find((frame) => frame.url === 'about:srcdoc') };
     assert.ok(setup.webContents, 'CLI setup is embedded in the parent');
     assert.equal(BrowserWindow.getAllWindows().length, windowCount, 'CLI setup creates no new window');
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await contents.executeJavaScript("document.getElementById('desktop-cli-models').getAttribute('aria-current') === 'page' && document.querySelector('.content').inert")) break;
+      await delay(100);
+    }
     assert.ok(await contents.executeJavaScript("document.getElementById('desktop-cli-models').getAttribute('aria-current') === 'page' && document.querySelector('.content').inert"), 'CLI tab is selected and covered content cannot receive focus');
     for (let attempt = 0; attempt < 100; attempt++) {
       if (await setup.webContents.executeJavaScript(`!!document.getElementById('codex-path')`)) break;
@@ -177,11 +181,24 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
       assert.equal(restored.modelPicker, undefined, 'Restore removes custom model picker');
     }
     await contents.executeJavaScript("document.querySelector('.sidebar a[href=\"#/config\"]').click()");
-    await delay(300);
-    assert.equal(await contents.executeJavaScript("document.getElementById('desktop-cli-content').hidden"), true, 'Other sidebar tabs hide CLI setup');
-    assert.equal(await contents.executeJavaScript("document.querySelector('.content').inert"), false, 'Management content is interactive again');
+    let navigation = { hidden: false, inert: true, visibility: '', hash: '' };
+    for (let attempt = 0; attempt < 100; attempt++) {
+      navigation = await contents.executeJavaScript(`({
+        hidden: document.getElementById('desktop-cli-content').hidden,
+        inert: document.querySelector('.content').inert,
+        visibility: document.visibilityState, hash: location.hash
+      })`);
+      if (navigation.hidden && !navigation.inert) break;
+      await delay(100);
+    }
+    fs.writeFileSync(path.join(outputDir, 'navigation.json'), JSON.stringify(navigation, null, 2));
+    assert.equal(navigation.hidden, true, 'Other sidebar tabs hide CLI setup: ' + JSON.stringify(navigation));
+    assert.equal(navigation.inert, false, 'Management content is interactive again');
     await contents.executeJavaScript("document.getElementById('desktop-cli-models').click()");
-    await delay(300);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await contents.executeJavaScript("!document.getElementById('desktop-cli-content').hidden")) break;
+      await delay(100);
+    }
     assert.ok(contents.mainFrame.frames.includes(setup.webContents), 'Returning to CLI setup preserves the form');
     assert.equal(await contents.executeJavaScript("document.getElementById('desktop-cli-content').hidden"), false, 'CLI setup is visible on return');
     assert.equal(await setup.webContents.executeJavaScript("document.getElementById('codex-path').value"), path.join(configDir, 'config.toml'), 'Unsaved configuration path survives tab changes');
