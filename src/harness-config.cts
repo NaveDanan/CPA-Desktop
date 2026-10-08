@@ -66,6 +66,15 @@ function writeFiles(files: [string, string][]) {
   }
 }
 
+function modelsForCli(models: CopilotModel[], harness: string) {
+  return models.filter((model) => {
+    const vendor = (model.owned_by || '').toLowerCase();
+    const id = model.id.split('/').pop().toLowerCase();
+    return harness === 'claude' ? vendor === 'anthropic' || id.startsWith('claude-')
+      : vendor === 'openai' || /^(gpt-|o\d(?:[.-]|$)|codex(?:[.-]|$))/.test(id);
+  });
+}
+
 function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: CatalogModel[], connection: { origin: string; apiKey: string }) {
   const files: [string, string][] = [];
   const normalized: CliSelections = {};
@@ -73,9 +82,11 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
     const item = selection[harness];
     if (!item?.enabled) continue;
     const file = configPath(item.path, harness);
-    const ids = item.all ? models.map((model) => model.id) : [...new Set(item.models || [])];
+    const available = modelsForCli(models, harness);
+    const ids = item.all ? available.map((model) => model.id) : [...new Set(item.models || [])];
     if (!ids.length) throw new Error(`Select at least one model for ${harness === 'codex' ? 'Codex' : 'Claude Code'}.`);
     if (ids.some((id) => !models.some((model) => model.id === id))) throw new Error('A selected model is no longer available. Refresh the model list.');
+    if (ids.some((id) => !available.some((model) => model.id === id))) throw new Error('A selected model is unavailable for this CLI. Use Anthropic models for Claude Code and OpenAI models for Codex.');
     const initial = ids.includes(item.defaultModel) ? item.defaultModel : ids[0];
     const config = readConfig(file, harness);
     if (harness === 'codex') {
@@ -99,13 +110,17 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
       config.env = {
         ...config.env, ANTHROPIC_BASE_URL: connection.origin, ANTHROPIC_AUTH_TOKEN: '',
         ANTHROPIC_API_KEY: connection.apiKey,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: initial, ANTHROPIC_DEFAULT_SONNET_MODEL: initial,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: initial, CLAUDE_CODE_SUBAGENT_MODEL: initial,
         CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '0',
       };
+      for (const family of ['opus', 'sonnet', 'haiku', 'fable']) {
+        const familyModels = ids.filter((id) => id.split('/').pop().startsWith(`claude-${family}`));
+        familyModels.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        config.env[`ANTHROPIC_DEFAULT_${family.toUpperCase()}_MODEL`] = familyModels.includes(initial) ? initial : familyModels[0] || initial;
+      }
       // Let /model persist the next session's choice without an environment override.
       delete config.env.ANTHROPIC_MODEL;
       delete config.env.ANTHROPIC_DEFAULT_MODEL;
+      delete config.env.CLAUDE_CODE_SUBAGENT_MODEL;
       config.model = initial;
       config.availableModels = ids;
       config.modelPicker = {
@@ -136,7 +151,7 @@ function buildRestoreFiles(selection: Record<string, Pick<CliSelection, "path" |
       if (config.model_catalog_json === `${file}.cliproxy-models.json`) delete config.model_catalog_json;
       if (config.model_providers) delete config.model_providers.cliproxy_copilot;
     } else {
-      for (const key of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY']) {
+      for (const key of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY']) {
         if (config.env) delete config.env[key];
       }
       for (const key of ['model', 'availableModels', 'modelPicker']) delete config[key];
@@ -153,7 +168,7 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
   const preferences = () => fs.existsSync(preferencesPath) ? JSON.parse(fs.readFileSync(preferencesPath, 'utf8')) : {};
   const connection = () => {
     const config = YAML.parse(fs.readFileSync(runtime.configPath, 'utf8'));
-    const apiKey = config['api-keys']?.[0];
+    const apiKey = (config.access?.['api-keys'] ?? config['api-keys'])?.[0];
     if (typeof apiKey !== 'string' || !apiKey) throw new Error('Add a proxy API key in the management UI first.');
     return { origin: runtime.origin, apiKey };
   };
@@ -170,7 +185,11 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
       const result = await get(`/v0/management/auth-files/models?name=${encodeURIComponent(account.name)}`, runtime.managementKey);
       for (const model of result.models || []) byID.set(model.id, model);
     }
-    return [...byID.values()].sort((a, b) => a.id.localeCompare(b.id));
+    return [...byID.values()].filter((model) => {
+      const name = model.id.split('/').pop();
+      return !name.startsWith('claude-') || !name.includes('.') || !byID.has(model.id.replaceAll('.', '-'));
+    }).map((model) => ({ ...model, clients: ['codex', 'claude'].filter((key) => modelsForCli([model], key).length > 0) }))
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
   return {
     async load() {
@@ -202,4 +221,4 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
   };
 }
 
-export { defaultPaths, configPath, readConfig, buildFiles, buildRestoreFiles, writeFiles, createHarnessService };
+export { defaultPaths, configPath, readConfig, buildFiles, buildRestoreFiles, writeFiles, createHarnessService, modelsForCli };

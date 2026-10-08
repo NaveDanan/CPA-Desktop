@@ -8,6 +8,21 @@ const { defaultPaths, configPath, buildFiles, buildRestoreFiles, writeFiles, cre
 const models = [{ id: 'claude-sonnet', display_name: 'Claude Sonnet' }, { id: 'gpt-copilot' }];
 const catalog = models.map((model) => ({ slug: model.id, display_name: model.id, context_window: 128000 }));
 const connection = { origin: 'http://127.0.0.1:8317', apiKey: 'test-only-key' };
+test('each CLI exposes its model family and Claude keeps Anthropic version spelling', (t) => {
+  const selection = fixture(t);
+  selection.codex.all = true;
+  selection.claude.all = true;
+  const available = [{ id: 'claude-sonnet-5-1', owned_by: 'Anthropic' }, { id: 'gpt-5.1', owned_by: 'OpenAI' }, { id: 'gemini-3', owned_by: 'Google' }];
+  const metadata = available.map((model) => ({ slug: model.id }));
+  const { files } = buildFiles(selection, available, metadata, connection);
+  const claude = JSON.parse(files.find(([file]) => file === selection.claude.path)[1]);
+  const codex = TOML.parse(files.find(([file]) => file === selection.codex.path)[1]);
+  assert.deepEqual(claude.availableModels, ['claude-sonnet-5-1']);
+  assert.equal(claude.model, 'claude-sonnet-5-1');
+  assert.equal(codex.model, 'gpt-5.1');
+  const catalogFile = JSON.parse(files.find(([file]) => file === codex.model_catalog_json)[1]);
+  assert.deepEqual(catalogFile.models.map((model) => model.slug), ['gpt-5.1']);
+});
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cliproxy-harness-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -38,7 +53,7 @@ test('separate catalogs and model pickers preserve unrelated settings and back u
   assert.equal(claude.env.ANTHROPIC_BASE_URL, connection.origin);
   assert.deepEqual(claude.permissions.deny, ['Bash(rm *)']);
 });
-test('all models includes refreshed models and repeated apply replaces old selections', (t) => {
+test('all models includes only OpenAI models and repeated apply replaces old selections', (t) => {
   const selection = fixture(t); selection.codex.all = true; selection.claude.enabled = false;
   writeFiles(buildFiles(selection, models, catalog, connection).files);
   selection.codex.all = false;
@@ -46,6 +61,45 @@ test('all models includes refreshed models and repeated apply replaces old selec
   const config = TOML.parse(fs.readFileSync(selection.codex.path, 'utf8'));
   assert.equal(JSON.parse(fs.readFileSync(config.model_catalog_json)).models.length, 1);
   assert.equal(fs.existsSync(selection.claude.path), false);
+});
+
+test('Claude family aliases use selected family models and subagents can inherit session choice', (t) => {
+  const selection = fixture(t);
+  selection.codex.enabled = false;
+  selection.claude.all = true;
+  selection.claude.defaultModel = 'claude-opus-5-1';
+  fs.writeFileSync(selection.claude.path, JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL: 'old-pin' } }));
+  const available = ['claude-opus-5-1', 'claude-sonnet-5-1', 'claude-haiku-4-5'].map((id) => ({ id }));
+  const { files } = buildFiles(selection, available, [], connection);
+  const config = JSON.parse(files[0][1]);
+  assert.equal(config.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'claude-opus-5-1');
+  assert.equal(config.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'claude-sonnet-5-1');
+  assert.equal(config.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-haiku-4-5');
+  assert.equal(config.env.CLAUDE_CODE_SUBAGENT_MODEL, undefined);
+  selection.claude.all = false;
+  selection.claude.models = ['gpt-copilot'];
+  assert.throws(() => buildFiles(selection, models, catalog, connection), /Anthropic models/);
+});
+
+test('discovery prefers canonical Claude aliases and applying supports v8 API-key configuration', async (t) => {
+  const selection = fixture(t);
+  selection.claude.all = true;
+  const configPath = path.join(selection.root, 'proxy.yaml');
+  fs.writeFileSync(configPath, 'config-version: 8\naccess:\n  api-keys: [v8-test-key]\n');
+  const available = [{ id: 'claude-sonnet-5.1', owned_by: 'Anthropic' }, { id: 'claude-sonnet-5-1', owned_by: 'Anthropic' }, { id: 'gpt-copilot', owned_by: 'OpenAI' }];
+  const request = async (url, options) => {
+    if (url.includes('client_version')) {
+      assert.equal(options.headers.Authorization, 'Bearer v8-test-key');
+      return { ok: true, json: async () => ({ models: catalog }) };
+    }
+    return { ok: true, json: async () => url.includes('/auth-files/models') ? { models: available } : { files: [{ name: 'copilot', provider: 'github-copilot' }] } };
+  };
+  const service = createHarnessService({ origin: connection.origin, configPath, managementKey: 'test-management' }, selection.root, request);
+  const loaded = await service.load();
+  assert.deepEqual(loaded.models.map((model) => model.id), ['claude-sonnet-5-1', 'gpt-copilot']);
+  assert.deepEqual(loaded.models[0].clients, ['claude']);
+  await service.apply(selection);
+  assert.equal(JSON.parse(fs.readFileSync(selection.claude.path)).model, 'claude-sonnet-5-1');
 });
 
 test('Claude configuration allows model switching and uses one API-key authentication source', (t) => {

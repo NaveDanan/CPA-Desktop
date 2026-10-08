@@ -20,10 +20,11 @@ function status(message: string, kind = '') {
   if (kind) $('status').scrollIntoView({ block: 'nearest' });
 }
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string) { const node = document.createElement(tag); if (text) node.textContent = text; if (className) node.className = className; return node; }
-function selected(key: string, id: string) { return state[key].all || state[key].models.includes(id); }
+function eligible(key: string, model: CopilotModel) { return !!model && (model.clients?.includes(key) ?? (key === 'claude' ? /(?:^|\/)claude-/.test(model.id) : /(?:^|\/)(gpt-|o\d(?:[.-]|$)|codex(?:[.-]|$))/.test(model.id))); }
+function selected(key: string, id: string) { return eligible(key, models.find((model) => model.id === id)) && (state[key].all || state[key].models.includes(id)); }
 function updateApply() {
-  const enabled = Object.values(state).filter((item) => item.enabled);
-  $('apply').disabled = busy || !models.length || !enabled.length || enabled.some((item) => !item.all && !item.models.length);
+  const enabled = Object.keys(state).filter((key) => state[key].enabled);
+  $('apply').disabled = busy || !enabled.length || enabled.some((key) => !models.some((model) => selected(key, model.id)));
   $('restore').disabled = busy || !state.codex || !state.claude;
   $('clients').inert = busy;
   document.querySelector<HTMLElement>('.models').inert = busy;
@@ -56,8 +57,8 @@ function renderClients() {
     enabled.addEventListener('change', () => { state[key].enabled = enabled.checked; renderRows(); updateDefaults(key); updateApply(); });
     label.append(enabled, document.createTextNode(names[key])); top.append(label);
     const allLabel = element('label'); const all = document.createElement('input'); all.type = 'checkbox'; all.checked = state[key].all; all.id = `${key}-all`;
-    all.addEventListener('change', () => { state[key].all = all.checked; state[key].models = all.checked ? models.map((model) => model.id) : []; renderRows(); updateDefaults(key); updateApply(); });
-    allLabel.append(all, document.createTextNode(' Expose all available models')); top.append(allLabel);
+    all.addEventListener('change', () => { state[key].all = all.checked; state[key].models = all.checked ? models.filter((model) => eligible(key, model)).map((model) => model.id) : []; renderRows(); updateDefaults(key); updateApply(); });
+    allLabel.append(all, document.createTextNode(` Expose all ${key === 'claude' ? 'Anthropic' : 'OpenAI'} models`)); top.append(allLabel);
     const controls = element('div', '', 'client-controls'); const pathField = element('div');
     const pathLabel = element('label', 'Configuration file', 'field-label'); pathLabel.htmlFor = `${key}-path`;
     const row = element('div', '', 'path-row'); const input = document.createElement('input'); input.id = `${key}-path`; input.value = state[key].path; input.spellcheck = false;
@@ -83,7 +84,7 @@ function renderRows() {
     visible++;
     const row = element('tr'); const name = element('td', model.display_name || model.id, 'model-name'); if (model.display_name && model.display_name !== model.id) name.append(element('small', model.id)); row.append(name);
     for (const key of Object.keys(names)) {
-      const cell = element('td'); const input = document.createElement('input'); input.type = 'checkbox'; input.checked = selected(key, model.id); input.disabled = !state[key].enabled;
+      const cell = element('td'); const input = document.createElement('input'); input.type = 'checkbox'; input.checked = selected(key, model.id); input.disabled = !state[key].enabled || !eligible(key, model);
       input.setAttribute('aria-label', `${model.id} in ${names[key]}`);
       input.addEventListener('change', () => {
         const ids = models.filter((item) => selected(key, item.id)).map((item) => item.id);
@@ -106,7 +107,9 @@ async function load() {
     for (const key of Object.keys(names)) {
       state[key] ||= { enabled: true, all: true, models: [], path: defaults[key], ...result.saved[key] };
       const previous = state[key].models;
-      state[key].models = previous.filter((id) => models.some((model) => model.id === id));
+      const migrateID = (id: string) => /(?:^|\/)claude-/.test(id || '') && models.some((model) => model.id === id.replaceAll('.', '-')) ? id.replaceAll('.', '-') : id;
+      state[key].models = previous.map(migrateID).filter((id) => models.some((model) => model.id === id && eligible(key, model)));
+      state[key].defaultModel = migrateID(state[key].defaultModel);
       if (!state[key].all) removed += previous.length - state[key].models.length;
     }
     renderClients(); renderRows();

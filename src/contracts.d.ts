@@ -1,4 +1,4 @@
-interface CopilotModel { id: string; display_name?: string }
+interface CopilotModel { id: string; display_name?: string; owned_by?: string; clients?: string[] }
 interface CliSelection { enabled: boolean; path: string; all: boolean; models: string[]; defaultModel?: string }
 type CliSelections = Record<string, CliSelection>;
 interface HarnessTheme { name: string; tokens: Record<string, string> }
