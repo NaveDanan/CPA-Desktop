@@ -119,6 +119,8 @@ async function start() {
     icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      // Hidden smoke tests still need animation frames for navigation and layout.
+      backgroundThrottling: !option(process.argv, '--smoke-test'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,
       additionalArguments: [`--desktop-origin=${runtime.origin}`],
     },
