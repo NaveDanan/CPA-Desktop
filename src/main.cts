@@ -108,7 +108,7 @@ async function start() {
   await waitForBackend(runtime);
   trace('Proxy management API ready');
   const appIcon = getAppIcon(resources);
-  if (process.platform === 'win32' && app.isPackaged) {
+  if (process.platform === 'win32' && app.isPackaged && !option(process.argv, '--smoke-test')) {
     app.setLoginItemSettings({ openAtLogin: true, args: ['--background'] });
   }
   Menu.setApplicationMenu(null);
