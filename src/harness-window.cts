@@ -37,10 +37,11 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
       .replace('<script src="usage-renderer.js" defer></script>', `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
       .replace('</body>', `<script nonce="${nonce}">${read('usage-renderer.js')}</script></body>`);
   });
-  handle('harness:usage', async (period: string, start?: string, end?: string) => {
+  handle('harness:usage', async (period: string, start?: string, end?: string, refreshPricing = false) => {
     if (!['today', 'this_week', 'this_month', 'custom'].includes(period)) throw new Error('Choose a valid period.');
     if (period === 'custom' && (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || ''))) throw new Error('Choose valid start and end dates.');
     const query = new URLSearchParams({ period });
+    if (refreshPricing === true) query.set('refresh_pricing', 'true');
     if (period === 'custom') { query.set('start', start); query.set('end', end); }
     const response = await fetch(`${runtime.origin}/v8/management/observability/usage/copilot?${query}`, {
       headers: { Authorization: `Bearer ${runtime.managementKey}` },

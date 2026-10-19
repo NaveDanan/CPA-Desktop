@@ -26,7 +26,7 @@ npm test
 npm run dist
 ```
 
-The installer is `dist/CLIProxyAPI-Desktop-Setup-1.2.7.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.8.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 
@@ -43,7 +43,7 @@ To validate the packaged window, pass `--smoke-test C:\path\to\results`. This ch
 Select **Copilot usage** in the desktop sidebar to view model request and token
 counts by day. Filter by today, this week, this month, or inclusive custom UTC
 dates, and switch the estimated cost between USD and GitHub AI credits.
-Unpriced requests stay visible but do not contribute to the cost estimate.
+Prices are fetched from [GitHub's model pricing page](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) on app startup and when you click **Refresh**. The latest successful prices are saved locally and retained if an update fails. Estimates include input, cached input, cache writes, output, and applicable context tiers. One AI credit equals $0.01, so $1 equals 100 AI credits. New records retain token details and are recalculated using the latest saved prices. Older records without those details keep their recorded estimate. Unpriced requests stay visible but do not contribute to the cost estimate.
 The history starts when this version of the proxy begins recording requests;
 it does not include usage made directly in GitHub or other applications.
 
@@ -63,4 +63,4 @@ Claude Code uses the proxy API key and stores its starting model in `model`, so 
 
 Keep the desktop proxy running and restart the CLIs after applying. Claude Code's custom `modelPicker` requires v2.1.242 or later. Codex must support `model_catalog_json`. Model menus do not grant upstream model access or guarantee that every model supports every CLI tool. This setup is available in the desktop app, which can access local files; the standalone web management page does not write browser-computer files.
 
-Version 1.2.6 includes the [Copilot compatibility fixes and audit](https://github.com/NaveDanan/CLIProxyAPI/blob/desktop-v1.2.6/docs/copilot-compatibility-audit.md). Its backend source is pinned by the `desktop-v1.2.6` tag in that repository. After upgrading, refresh the model list, apply the CLI configuration again, and restart Claude Code and Codex.
+Version 1.2.8 fixes duplicate replies in T3 Code and Codex CLI by keeping a stable response item ID throughout Copilot streams. Text and tool call content are preserved, along with the existing dotted-to-hyphenated model-name conversion. It includes the [Copilot compatibility fixes and audit](https://github.com/NaveDanan/CLIProxyAPI/blob/desktop-v1.2.8/docs/copilot-compatibility-audit.md). Its backend source is pinned by the `desktop-v1.2.8` tag in that repository. After upgrading, refresh the model list, apply the CLI configuration again, and restart Claude Code and Codex.

@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -33,7 +33,7 @@
     "productName": "CLIProxyAPI Desktop",
     "icon": "assets/icon.ico",
     "directories": {
-      "output": "dist"
+      "output": "../dist/desktop"
     },
     "files": [
       "main.cjs",

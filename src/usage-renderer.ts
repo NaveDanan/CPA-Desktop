@@ -63,11 +63,15 @@
       }
     }
     trend.setAttribute('aria-label', `${summary.days.length} UTC days of estimated ${unit === 'usd' ? 'USD' : 'AI credit'} usage; values are listed in the daily table`);
-    byId('status').textContent = all.requests ? '' : 'No Copilot requests recorded for this period.';
+    const pricing = summary.pricing;
+    const priceStatus = !pricing?.models ? 'Model prices are unavailable. Click Refresh to retry.'
+      : `${pricing.error ? `${pricing.error} Using saved prices. ` : ''}Prices updated ${new Date(pricing.updated_at).toLocaleString()}.`;
+    byId('status').textContent = `${all.requests ? '' : 'No Copilot requests recorded for this period. '}${priceStatus}`;
+    byId('status').className = pricing?.error || !pricing?.models ? 'error' : '';
     document.querySelectorAll('.cost-heading').forEach((heading) => { heading.textContent = unit === 'usd' ? 'Estimated USD' : 'Estimated AI credits'; });
   }
 
-  async function load() {
+  async function load(refreshPricing = false) {
     const sequence = ++requestSequence;
     const period = (byId('period') as HTMLSelectElement).value;
     const start = (byId('start') as HTMLInputElement).value;
@@ -79,14 +83,14 @@
       return;
     }
     (byId('refresh') as HTMLButtonElement).disabled = true;
-    byId('status').textContent = 'Loading usage...';
+    byId('status').textContent = refreshPricing ? 'Updating prices from GitHub and loading usage...' : 'Loading usage...';
     byId('status').className = '';
     summary = null;
     byId('totals').hidden = true;
     byId('models-section').hidden = true;
     byId('history-section').hidden = true;
     for (const id of ['models', 'history', 'trend']) byId(id).replaceChildren();
-    try { const result = await window.harness.usage(period, start, end); if (sequence === requestSequence) { summary = result; render(); } }
+    try { const result = await window.harness.usage(period, start, end, refreshPricing); if (sequence === requestSequence) { summary = result; render(); } }
     catch (error) { if (sequence === requestSequence) { byId('status').textContent = error instanceof Error ? error.message : 'Could not load usage.'; byId('status').className = 'error'; } }
     finally { if (sequence === requestSequence) (byId('refresh') as HTMLButtonElement).disabled = false; }
   }
@@ -99,6 +103,6 @@
     byId('credits').setAttribute('aria-pressed', String(value === 'credits'));
     render();
   });
-  byId('refresh').addEventListener('click', () => void load());
-  void load();
+  byId('refresh').addEventListener('click', () => void load(true));
+  void load(true);
 })();
