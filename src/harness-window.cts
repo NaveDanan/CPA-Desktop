@@ -10,7 +10,7 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
   let applying = false;
   const readTheme = () => parent.webContents.executeJavaScript(`(() => {
     const style = getComputedStyle(document.documentElement);
-    const keys = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-hover', 'text-primary', 'text-secondary', 'border-color', 'border-primary', 'primary-color', 'primary-hover', 'primary-active', 'success-badge-text', 'failure-badge-text'];
+    const keys = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-hover', 'text-primary', 'text-secondary', 'text-tertiary', 'border-color', 'border-primary', 'primary-color', 'primary-hover', 'primary-active', 'success-badge-text', 'failure-badge-text'];
     return { name: document.documentElement.dataset.theme || 'light', tokens: Object.fromEntries(keys.map(key => ['--' + key, style.getPropertyValue('--' + key).trim()])) };
   })()`);
   const trusted = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => event.sender === parent.webContents && event.senderFrame === parent.webContents.mainFrame && new URL(event.senderFrame.url).origin === runtime.origin && new URL(event.senderFrame.url).pathname === '/management.html';
@@ -19,24 +19,20 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
     try { return { value: await action(...args) }; }
     catch (error) { return { error: error.message }; }
   });
-  handle('harness:page', () => {
+  // Embedded pages run in sandboxed frames, so their styles and scripts are inlined under a fresh nonce.
+  // Replacer callbacks keep "$" sequences in the inlined code from being read as replacement patterns.
+  const framePage = (page: string, renderer: string) => {
     const nonce = randomBytes(18).toString('base64');
     const read = (name: string) => fs.readFileSync(path.join(__dirname, name), 'utf8');
-    return read('harness.html')
-      .replace("script-src 'self'; style-src 'self'", `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
-      .replace('<link rel="stylesheet" href="harness.css">', `<style nonce="${nonce}">${read('harness.css')}</style>`)
-      .replace('<script src="harness-renderer.js" defer></script>', `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
-      .replace('</body>', `<script nonce="${nonce}">${read('harness-renderer.js')}</script></body>`);
-  });
-  handle('harness:usage-page', () => {
-    const nonce = randomBytes(18).toString('base64');
-    const read = (name: string) => fs.readFileSync(path.join(__dirname, name), 'utf8');
-    return read('usage.html')
-      .replace("script-src 'self'; style-src 'self'", `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
-      .replace('<link rel="stylesheet" href="usage.css">', `<style nonce="${nonce}">${read('usage.css')}</style>`)
-      .replace('<script src="usage-renderer.js" defer></script>', `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
-      .replace('</body>', `<script nonce="${nonce}">${read('usage-renderer.js')}</script></body>`);
-  });
+    return read(`${page}.html`)
+      .replace("script-src 'self'; style-src 'self'", () => `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
+      .replace(`<link rel="stylesheet" href="${page}.css">`, () => `<style nonce="${nonce}">${read(`${page}.css`)}</style>`)
+      .replace(`<script src="${renderer}" defer></script>`, () => `<script nonce="${nonce}">${read('harness-bridge.js')}</script>`)
+      .replace('</body>', () => `<script nonce="${nonce}">${read(renderer)}</script></body>`);
+  };
+  handle('harness:page', () => framePage('harness', 'harness-renderer.js'));
+  handle('harness:usage-page', () => framePage('usage', 'usage-renderer.js'));
+  handle('harness:dashboard-page', () => framePage('dashboard', 'dashboard-renderer.js'));
   handle('harness:usage', async (period: string, start?: string, end?: string, refreshPricing = false) => {
     if (!['today', 'this_week', 'this_month', 'custom'].includes(period)) throw new Error('Choose a valid period.');
     if (period === 'custom' && (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || ''))) throw new Error('Choose valid start and end dates.');
@@ -47,6 +43,17 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
       headers: { Authorization: `Bearer ${runtime.managementKey}` },
     });
     if (!response.ok) throw new Error(`Could not load Copilot usage (${response.status}). Check that the proxy is running.`);
+    return response.json();
+  });
+  handle('harness:dashboard', async (boundaries: unknown, refreshPricing = false) => {
+    if (!Array.isArray(boundaries) || boundaries.length < 2 || boundaries.length > 401 ||
+      !boundaries.every((value, index) => Number.isSafeInteger(value) && (index === 0 || value > boundaries[index - 1]))) throw new Error('Choose a valid usage period.');
+    const query = new URLSearchParams({ boundaries: boundaries.join(',') });
+    if (refreshPricing === true) query.set('refresh_pricing', 'true');
+    const response = await fetch(`${runtime.origin}/v8/management/observability/usage/dashboard?${query}`, {
+      headers: { Authorization: `Bearer ${runtime.managementKey}` },
+    });
+    if (!response.ok) throw new Error(`Could not load usage (${response.status}). Check that the proxy is running.`);
     return response.json();
   });
   handle('harness:load', () => service.load());

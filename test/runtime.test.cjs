@@ -104,6 +104,24 @@ test('relaunch preserves keys and user settings without importing again', (t) =>
   assert.deepEqual(second.config['api-keys'], first.config['api-keys']);
 });
 
+test('transient error cooldown defaults to disabled but keeps explicit values', (t) => {
+  const root = fixture(t);
+  const legacy = prepareConfig(path.join(root, 'legacy'));
+  assert.equal(legacy.config['transient-error-cooldown-seconds'], -1);
+
+  const explicitPath = path.join(root, 'explicit.yaml');
+  fs.writeFileSync(explicitPath, YAML.stringify({ port: 8340, 'transient-error-cooldown-seconds': 15 }));
+  const explicit = prepareConfig(path.join(root, 'explicit'), explicitPath);
+  assert.equal(explicit.config['transient-error-cooldown-seconds'], 15);
+
+  const v8Path = path.join(root, 'v8.yaml');
+  fs.writeFileSync(v8Path, YAML.stringify({ 'config-version': 8, server: { port: 8341 }, routing: { cooldown: { 'disable-cooling': false } } }));
+  const v8 = prepareConfig(path.join(root, 'v8'), v8Path);
+  assert.equal(v8.config.routing.cooldown['transient-error-cooldown-seconds'], -1);
+  assert.equal(v8.config.routing.cooldown['disable-cooling'], false);
+  assert.equal(v8.config['transient-error-cooldown-seconds'], undefined);
+});
+
 test('occupied port is rejected without touching its listener', async () => {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

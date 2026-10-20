@@ -113,6 +113,32 @@ test('Claude configuration allows model switching and uses one API-key authentic
   assert.equal(claude.env.ANTHROPIC_API_KEY, connection.apiKey);
 });
 
+test('Codex app connectors are disabled while routed and restored only when the proxy disabled them', (t) => {
+  const selection = fixture(t);
+  selection.claude.enabled = false;
+  fs.writeFileSync(selection.codex.path, '[features]\nhooks = true\n');
+  const first = buildFiles(selection, models, catalog, connection);
+  writeFiles(first.files);
+  assert.equal(first.normalized.codex.appsManaged, true);
+  let codex = TOML.parse(fs.readFileSync(selection.codex.path, 'utf8'));
+  assert.equal(codex.features.apps, false);
+  assert.equal(codex.features.hooks, true);
+  // Re-applying keeps ownership even though the file now has apps = false.
+  const second = buildFiles(selection, models, catalog, connection, first.normalized);
+  writeFiles(second.files);
+  assert.equal(second.normalized.codex.appsManaged, true);
+  writeFiles(buildRestoreFiles(selection, second.normalized).files);
+  codex = TOML.parse(fs.readFileSync(selection.codex.path, 'utf8'));
+  assert.deepEqual(codex.features, { hooks: true });
+
+  fs.writeFileSync(selection.codex.path, '[features]\napps = false\n');
+  const userOwned = buildFiles(selection, models, catalog, connection);
+  writeFiles(userOwned.files);
+  assert.equal(userOwned.normalized.codex.appsManaged, undefined);
+  writeFiles(buildRestoreFiles(selection, userOwned.normalized).files);
+  assert.equal(TOML.parse(fs.readFileSync(selection.codex.path, 'utf8')).features.apps, false);
+});
+
 test('restore resets selected CLI settings and preserves unrelated preferences', (t) => {
   const selection = fixture(t);
   fs.writeFileSync(selection.codex.path, '[mcp_servers.example]\ncommand = "example"\n[model_providers.other]\nname = "Other"\n');

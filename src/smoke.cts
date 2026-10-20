@@ -46,6 +46,74 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
   await delay(1500);
   await screenshot('desktop-dashboard.png', contents);
   {
+    let dashboard: Electron.WebFrameMain | undefined;
+    const settled = "document.getElementById('window-label').textContent !== '' && !document.querySelector('main').classList.contains('loading')";
+    const waitForDashboard = async () => {
+      for (let attempt = 0; attempt < 300; attempt++) {
+        dashboard = contents.mainFrame.frames.find((frame) => frame.name === 'desktop-usage-dashboard');
+        if (dashboard && await dashboard.executeJavaScript(settled).catch((): boolean => false)) return;
+        await delay(100);
+      }
+    };
+    await waitForDashboard();
+    assert.ok(dashboard, 'Usage and cost charts are embedded in the Dashboard page');
+    assert.notEqual(await dashboard.executeJavaScript("document.getElementById('status').className"), 'status error', await dashboard.executeJavaScript("document.getElementById('status').textContent") as string);
+    assert.ok(await contents.executeJavaScript(`(() => {
+      const frame = document.getElementById('desktop-usage-dashboard');
+      return frame.parentElement.matches('[class*="dashboard-module__page"]') && !!frame.nextElementSibling?.matches('[class*="dashboard-module__hero"]');
+    })()`), 'Usage and cost open the Dashboard page');
+    // Scroll the management page so a part of the embedded dashboard is at the top of the window.
+    const showDashboardAt = async (selector: string) => {
+      const offset = await dashboard.executeJavaScript(`Math.max(0, document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect().top + scrollY - 12 || 0)`);
+      await contents.executeJavaScript(`(() => {
+        const frame = document.getElementById('desktop-usage-dashboard');
+        let scroller = frame.parentElement;
+        while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+        scroller = scroller || document.scrollingElement;
+        scroller.scrollTop += frame.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 24 + ${offset};
+      })()`);
+      await delay(300);
+    };
+    const frameHeight = await contents.executeJavaScript("document.getElementById('desktop-usage-dashboard').getBoundingClientRect().height");
+    const contentHeight = await dashboard.executeJavaScript('document.body.getBoundingClientRect().height') as number;
+    assert.ok(Math.abs(frameHeight - contentHeight) <= 2, `Dashboard frame fits its content (${frameHeight} vs ${contentHeight})`);
+    await showDashboardAt('main');
+    await screenshot('usage-dashboard.png', contents);
+    const providers = await dashboard.executeJavaScript("[...document.querySelectorAll('.provider')].map((section) => section.getAttribute('aria-label'))") as string[];
+    fs.writeFileSync(path.join(outputDir, 'usage-dashboard.json'), JSON.stringify({ providers, text: await dashboard.executeJavaScript("document.querySelector('#overview').innerText") }, null, 2));
+    if (providers.length) {
+      assert.ok(await dashboard.executeJavaScript("document.querySelectorAll('.provider .plot svg path').length > 0"), 'Provider charts draw usage lines');
+      await showDashboardAt('.provider');
+      await screenshot('usage-dashboard-provider.png', contents);
+      await dashboard.executeJavaScript("(() => { const plot = document.querySelector('.provider .plot'); const box = plot.getBoundingClientRect(); plot.dispatchEvent(new MouseEvent('mousemove', { clientX: box.right - 2, clientY: box.top + box.height / 2 })); })()");
+      assert.ok(await dashboard.executeJavaScript("!document.querySelector('.provider .tooltip').hidden"), 'Hovering a chart shows the period breakdown');
+      await screenshot('usage-dashboard-tooltip.png', contents);
+      if (providers.includes('GitHub Copilot')) {
+        await dashboard.executeJavaScript("[...document.querySelectorAll('.provider-head button')].find((button) => button.textContent === 'AI credits').click()");
+        assert.ok(await dashboard.executeJavaScript("document.querySelector('.provider .chart h4').textContent.includes('AI credits') && document.querySelector('.provider .summary-total .big').textContent.endsWith('credits')"), 'GitHub Copilot can show AI credits');
+        await showDashboardAt('.provider');
+        await screenshot('usage-dashboard-credits.png', contents);
+        await dashboard.executeJavaScript("[...document.querySelectorAll('.provider-head button')].find((button) => button.textContent.startsWith('USD')).click()");
+      }
+      await dashboard.executeJavaScript("document.querySelector('.breakdown-head button:last-child').click()");
+      assert.ok(await dashboard.executeJavaScript("document.querySelector('.breakdown th').textContent === 'Day'"), 'Breakdown switches to days');
+      await showDashboardAt('.breakdown');
+      await screenshot('usage-dashboard-days.png', contents);
+    }
+    await dashboard.executeJavaScript("document.querySelector('[data-metric=\"tokens\"]').click()");
+    assert.ok(await dashboard.executeJavaScript("document.querySelector('[data-metric=\"tokens\"]').getAttribute('aria-pressed') === 'true'"), 'Tokens metric is selectable');
+    await dashboard.executeJavaScript("document.querySelector('[data-days=\"1\"]').click()");
+    await delay(200);
+    await waitForDashboard();
+    assert.ok(await dashboard.executeJavaScript("document.querySelector('[data-days=\"1\"]').getAttribute('aria-pressed') === 'true' && document.getElementById('status').className === 'status'"), 'Past 24 hours loads hourly usage');
+    await showDashboardAt('main');
+    await screenshot('usage-dashboard-24h-tokens.png', contents);
+    await dashboard.executeJavaScript("document.querySelector('[data-metric=\"cost\"]').click(); document.querySelector('[data-days=\"30\"]').click()");
+    await delay(200);
+    await waitForDashboard();
+    await contents.executeJavaScript('document.querySelector(".main-content")?.scrollTo(0, 0)');
+  }
+  {
     const layout = await contents.executeJavaScript(`(() => {
       const bar = document.getElementById('desktop-titlebar').getBoundingClientRect();
       const sidebar = document.querySelector('.sidebar').getBoundingClientRect();
@@ -106,10 +174,10 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     const windowCount = BrowserWindow.getAllWindows().length;
     await contents.executeJavaScript("document.getElementById('desktop-cli-models').click()");
     for (let attempt = 0; attempt < 100; attempt++) {
-      if (contents.mainFrame.frames.some((frame) => frame.url === 'about:srcdoc')) break;
+      if (contents.mainFrame.frames.some((frame) => frame.name === 'desktop-cli-content')) break;
       await delay(100);
     }
-    const setup = { webContents: contents.mainFrame.frames.find((frame) => frame.url === 'about:srcdoc') };
+    const setup = { webContents: contents.mainFrame.frames.find((frame) => frame.name === 'desktop-cli-content') };
     assert.ok(setup.webContents, 'CLI setup is embedded in the parent');
     assert.equal(BrowserWindow.getAllWindows().length, windowCount, 'CLI setup creates no new window');
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -207,7 +275,7 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     await contents.executeJavaScript("document.getElementById('desktop-copilot-usage').click()");
     let usageFrame: Electron.WebFrameMain | undefined;
     for (let attempt = 0; attempt < 100; attempt++) {
-      usageFrame = contents.mainFrame.frames.find((item) => item.url === 'about:srcdoc' && item !== setup.webContents);
+      usageFrame = contents.mainFrame.frames.find((item) => item.name === 'desktop-copilot-content');
       if (usageFrame && await usageFrame.executeJavaScript("document.getElementById('models-title') !== null")) break;
       await delay(100);
     }
@@ -226,7 +294,7 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
   fs.writeFileSync(path.join(outputDir, 'result.json'), JSON.stringify({
     passed: true, backendPid, origin: runtime.origin, accountCount, modelCount: models.data?.length || 0,
     models: (models.data || []).map((model: CopilotModel) => model.id),
-    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'Copilot usage history', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
+    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'Copilot usage history', 'usage dashboard', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
   }, null, 2));
 }
 

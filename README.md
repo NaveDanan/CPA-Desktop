@@ -26,7 +26,7 @@ npm test
 npm run dist
 ```
 
-The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.8.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.9.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 
@@ -55,7 +55,7 @@ Claude versions use Anthropic's hyphenated spelling, such as `claude-sonnet-5-1`
 
 Default files are `~/.codex/config.toml` and `~/.claude/settings.json`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` overrides are honored. Edit a path, use **Browse**, or restore its default. Custom paths must be files your CLI actually loads; selecting another path does not change the CLI's configuration directory.
 
-The app merges settings, saves a Codex model catalog alongside its config, and creates uniquely named `.cliproxy-*.bak` backups before replacing existing files. TOML formatting and comments may change; unrelated settings are preserved. Selections and paths persist between launches. **Refresh models** reloads the current account models; apply again to update CLI menus when available models change.
+The app merges settings, saves a Codex model catalog alongside its config, and creates uniquely named `.cliproxy-*.bak` backups before replacing existing files. Codex's ChatGPT app connectors are turned off (`features.apps = false`) because their tool definitions add about 700 KB to every request and force frequent compaction; **Restore Defaults** turns them back on unless you had disabled them yourself. TOML formatting and comments may change; unrelated settings are preserved. Selections and paths persist between launches. **Refresh models** reloads the current account models; apply again to update CLI menus when available models change.
 
 **Restore Defaults** opens a dialog with both CLIs selected. Uncheck either CLI to keep its configuration, then confirm. This removes the proxy's connection and model settings at the displayed paths and preserves unrelated preferences and sign-ins. Existing files are backed up first. It also works when model discovery is unavailable. Restart the selected CLIs afterward.
 
@@ -64,3 +64,5 @@ Claude Code uses the proxy API key and stores its starting model in `model`, so 
 Keep the desktop proxy running and restart the CLIs after applying. Claude Code's custom `modelPicker` requires v2.1.242 or later. Codex must support `model_catalog_json`. Model menus do not grant upstream model access or guarantee that every model supports every CLI tool. This setup is available in the desktop app, which can access local files; the standalone web management page does not write browser-computer files.
 
 Version 1.2.8 fixes duplicate replies in T3 Code and Codex CLI by keeping a stable response item ID throughout Copilot streams. Text and tool call content are preserved, along with the existing dotted-to-hyphenated model-name conversion. It includes the [Copilot compatibility fixes and audit](https://github.com/NaveDanan/CLIProxyAPI/blob/desktop-v1.2.8/docs/copilot-compatibility-audit.md). Its backend source is pinned by the `desktop-v1.2.8` tag in that repository. After upgrading, refresh the model list, apply the CLI configuration again, and restart Claude Code and Codex.
+
+Version 1.2.9 adds a **Usage and cost** section to the Dashboard page with spend and tokens by provider, model, and harness for the past 24 hours, 7, 30, or 90 days. Usage saved before harnesses were recorded is matched to Claude Code and Codex session logs at startup. The proxy no longer blocks the only Copilot account for 60 seconds after an upstream timeout, so follow-up requests are not rejected with immediate 503 errors; set `transient-error-cooldown-seconds` to restore a cooldown. Apply the CLI configuration again so Codex drops the ChatGPT app connectors described above.

@@ -382,19 +382,35 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     let frame: number;
     const pane = document.createElement('iframe');
     pane.id = 'desktop-cli-content';
+    pane.name = 'desktop-cli-content';
     pane.title = 'Configure CLI';
     pane.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
     pane.hidden = true;
     const usagePane = document.createElement('iframe');
     usagePane.id = 'desktop-copilot-content';
+    usagePane.name = 'desktop-copilot-content';
     usagePane.title = 'Copilot usage';
     usagePane.setAttribute('sandbox', 'allow-scripts');
     usagePane.hidden = true;
-    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage']);
+    // Usage and cost charts open the existing Dashboard page.
+    const dashboardPane = document.createElement('iframe');
+    dashboardPane.id = 'desktop-usage-dashboard';
+    dashboardPane.name = 'desktop-usage-dashboard';
+    dashboardPane.title = 'Usage and cost';
+    dashboardPane.setAttribute('sandbox', 'allow-scripts');
+    let dashboardLoading = false;
+    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage', 'dashboard']);
     window.addEventListener('message', async (event) => {
       const message = event.data;
-      const source = event.source === pane.contentWindow ? pane : event.source === usagePane.contentWindow ? usagePane : null;
-      if (!source || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args) || (source === usagePane && !['usage', 'theme'].includes(message.name))) return;
+      const source = event.source === pane.contentWindow ? pane : event.source === usagePane.contentWindow ? usagePane : event.source === dashboardPane.contentWindow ? dashboardPane : null;
+      if (source === dashboardPane && message?.channel === 'harness:resize') {
+        const height = Number(message.height);
+        if (Number.isFinite(height) && height > 0) dashboardPane.style.height = `${Math.min(Math.ceil(height), 50000)}px`;
+        return;
+      }
+      if (!source || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args) ||
+        (source === usagePane && !['usage', 'theme'].includes(message.name)) || (source === dashboardPane && !['dashboard', 'theme'].includes(message.name)) ||
+        (source === pane && message.name === 'dashboard')) return;
       try {
         const result = await ipcRenderer.invoke('harness:' + message.name, ...message.args);
         source.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, ...result }, '*');
@@ -403,8 +419,23 @@ if (origin && location.origin === origin && location.pathname === '/management.h
       }
     });
     ipcRenderer.on('harness:theme-changed', (_event, theme) => {
-      for (const view of [pane, usagePane]) view.contentWindow?.postMessage({ channel: 'harness:response', theme }, '*');
+      for (const view of [pane, usagePane, dashboardPane]) view.contentWindow?.postMessage({ channel: 'harness:response', theme }, '*');
     });
+    const attachDashboard = () => {
+      const onDashboard = ['', '#', '#/', '#/dashboard'].includes(location.hash.split('?')[0]);
+      const page = onDashboard ? document.querySelector<HTMLElement>('[class*="dashboard-module__page"]') : null;
+      if (!page || dashboardPane.parentElement === page) return;
+      if (!dashboardPane.srcdoc) {
+        if (dashboardLoading) return;
+        dashboardLoading = true;
+        ipcRenderer.invoke('harness:dashboard-page').then((result) => {
+          if (result.value) { dashboardPane.srcdoc = result.value; attachDashboard(); }
+        }).catch(() => {}).finally(() => { dashboardLoading = false; });
+        return;
+      }
+      // Reinserting the frame after the page remounts reloads it with current usage.
+      page.insertBefore(dashboardPane, page.querySelector(':scope > [class*="dashboard-module__hero"]') || page.firstChild);
+    };
     const resize = new ResizeObserver(() => schedule());
     const sync = () => {
       frame = null;
@@ -459,8 +490,9 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     }, true);
     window.addEventListener('hashchange', () => { selected = null; schedule(); });
     window.addEventListener('resize', schedule);
-    style.textContent += '#desktop-cli-content,#desktop-copilot-content{position:fixed;border:0;z-index:10;background:var(--bg-primary)}.desktop-cli-selected .content{visibility:hidden}.desktop-cli-selected .sidebar a.active{background:transparent;box-shadow:none;border-color:transparent;color:var(--text-secondary)}#desktop-cli-models.active,#desktop-copilot-usage.active{background:var(--bg-tertiary);color:var(--text-primary)}';
+    style.textContent += '#desktop-cli-content,#desktop-copilot-content{position:fixed;border:0;z-index:10;background:var(--bg-primary)}#desktop-usage-dashboard{display:block;flex-shrink:0;width:100%;height:640px;border:0;background:transparent;color-scheme:normal}.desktop-cli-selected .content{visibility:hidden}.desktop-cli-selected .sidebar a.active{background:transparent;box-shadow:none;border-color:transparent;color:var(--text-secondary)}#desktop-cli-models.active,#desktop-copilot-usage.active{background:var(--bg-tertiary);color:var(--text-primary)}';
     const attach = () => {
+      attachDashboard();
       if (branding) {
         const brand = document.querySelector<HTMLElement>('.sidebar-brand');
         const title = brand?.querySelector<HTMLElement>('.sidebar-brand-title');

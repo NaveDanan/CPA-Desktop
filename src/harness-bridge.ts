@@ -26,6 +26,7 @@ window.harness = {
   restore: (selection) => invoke<HarnessRestore>('restore', selection),
   theme: () => invoke<HarnessTheme>('theme'),
   usage: (period, start, end, refreshPricing) => invoke<CopilotUsageSummary>('usage', period, start, end, refreshPricing),
+  dashboard: (boundaries, refreshPricing) => invoke<UsageDashboard>('dashboard', boundaries, refreshPricing),
   onTheme: (callback) => themeListeners.add(callback),
 };
 

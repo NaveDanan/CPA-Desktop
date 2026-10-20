@@ -8,6 +8,7 @@ import { createUpdateChecker, CHECK_INTERVAL } from './updates.cjs';
 import { cleanupUpdateCache, takeInstallError, launchUpdateInstaller } from './update-installer.cjs';
 import { setupTray } from './tray.cjs';
 import { setupTaskbar } from './taskbar.cjs';
+import { attributeHarnesses } from './harness-history.cjs';
 
 function getAppIcon(resources: string) {
   const candidates = [
@@ -94,6 +95,13 @@ async function start() {
   const env: NodeJS.ProcessEnv = { ...process.env, MANAGEMENT_STATIC_PATH: staticDir };
   for (const key of Object.keys(env)) {
     if (/^(PGSTORE_|GITSTORE_|OBJECTSTORE_)/.test(key) || key === 'MANAGEMENT_PASSWORD') delete env[key];
+  }
+  try {
+    // The proxy is not running yet, so saved usage can be updated safely.
+    const attribution = attributeHarnesses(path.join(path.dirname(runtime.configPath), 'copilot-usage.jsonl'));
+    if (attribution.checked) trace(`Matched ${attribution.matched} of ${attribution.checked} saved requests to their harness`);
+  } catch (error) {
+    trace(`Could not match saved requests to their harness: ${error.message}`);
   }
   backend = spawn(binary, ['--config', runtime.configPath], { cwd: userData, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   trace('Proxy process started');

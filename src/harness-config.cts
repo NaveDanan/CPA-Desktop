@@ -75,7 +75,7 @@ function modelsForCli(models: CopilotModel[], harness: string) {
   });
 }
 
-function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: CatalogModel[], connection: { origin: string; apiKey: string }) {
+function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: CatalogModel[], connection: { origin: string; apiKey: string }, saved: CliSelections = {}) {
   const files: [string, string][] = [];
   const normalized: CliSelections = {};
   for (const harness of ['codex', 'claude']) {
@@ -89,6 +89,7 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
     if (ids.some((id) => !available.some((model) => model.id === id))) throw new Error('A selected model is unavailable for this CLI. Use Anthropic models for Claude Code and OpenAI models for Codex.');
     const initial = ids.includes(item.defaultModel) ? item.defaultModel : ids[0];
     const config = readConfig(file, harness);
+    let appsManaged: boolean | undefined;
     if (harness === 'codex') {
       const entries = ids.map((id) => catalog.find((model) => model.slug === id));
       if (entries.some((entry) => !entry)) throw new Error('The proxy did not return Codex metadata for every selected model. Refresh and try again.');
@@ -104,6 +105,10 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
         name: 'GitHub Copilot via CLIProxyAPI', base_url: `${connection.origin}/v1`,
         wire_api: 'responses', experimental_bearer_token: connection.apiKey,
       };
+      // ChatGPT app connectors add ~700 KB of tool declarations to every request, which
+      // fills most of the context window and forces compaction every few turns.
+      appsManaged = saved.codex?.appsManaged === true || config.features?.apps !== false;
+      config.features = { ...config.features, apps: false };
       files.push([catalogPath, JSON.stringify({ models: entries.map((entry, priority) => ({ ...entry, visibility: 'list', supported_in_api: true, priority })) }, null, 2) + '\n']);
       files.push([file, TOML.stringify(config)]);
     } else {
@@ -130,13 +135,14 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
       files.push([file, JSON.stringify(config, null, 2) + '\n']);
     }
     normalized[harness] = { ...item, path: file, models: ids, defaultModel: initial };
+    if (appsManaged) normalized[harness].appsManaged = true;
   }
   if (!files.length) throw new Error('Enable at least one CLI.');
   return { files, normalized };
 }
 
 // Remove the settings owned by this integration, preserving other CLI preferences.
-function buildRestoreFiles(selection: Record<string, Pick<CliSelection, "path" | "enabled">>) {
+function buildRestoreFiles(selection: Record<string, Pick<CliSelection, "path" | "enabled">>, saved: CliSelections = {}) {
   const files: [string, string][] = [];
   const restored: CliSelections = {};
   for (const harness of ['codex', 'claude']) {
@@ -150,6 +156,10 @@ function buildRestoreFiles(selection: Record<string, Pick<CliSelection, "path" |
       }
       if (config.model_catalog_json === `${file}.cliproxy-models.json`) delete config.model_catalog_json;
       if (config.model_providers) delete config.model_providers.cliproxy_copilot;
+      if (saved.codex?.appsManaged && config.features?.apps === false) {
+        delete config.features.apps;
+        if (!Object.keys(config.features).length) delete config.features;
+      }
     } else {
       for (const key of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY']) {
         if (config.env) delete config.env[key];
@@ -207,13 +217,13 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
       const models = await discover();
       const conn = connection();
       const catalog = selection.codex?.enabled ? (await get('/v1/models?client_version', conn.apiKey)).models || [] : [];
-      const { files, normalized } = buildFiles(selection, models, catalog, conn);
+      const { files, normalized } = buildFiles(selection, models, catalog, conn, preferences());
       files.push([preferencesPath, JSON.stringify({ ...preferences(), ...selection, ...normalized }, null, 2) + '\n']);
       const backups = writeFiles(files);
       return { backups, paths: Object.values(normalized).map((item) => item.path) };
     },
     restore(selection: Record<string, Pick<CliSelection, "path" | "enabled">>) {
-      const { files, restored } = buildRestoreFiles(selection);
+      const { files, restored } = buildRestoreFiles(selection, preferences());
       files.push([preferencesPath, JSON.stringify({ ...preferences(), ...restored }, null, 2) + '\n']);
       const backups = writeFiles(files);
       return { backups, restored, paths: Object.values(restored).map((item) => item.path) };

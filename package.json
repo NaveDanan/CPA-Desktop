@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "The CLIProxyAPI management center in a Windows desktop application",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -53,6 +53,9 @@
       "usage.html",
       "usage.css",
       "usage-renderer.js",
+      "dashboard.html",
+      "dashboard.css",
+      "dashboard-renderer.js",
       "package.json",
       "assets/icon.ico",
       "assets/icon.png"

@@ -17,6 +17,10 @@ function resolveAuthDir(value: string | undefined, configPath: string) {
   return path.resolve(path.dirname(configPath), raw);
 }
 
+// A single upstream timeout (e.g. a 408 on a large body) would otherwise block the only
+// credential for 60 s and turn every follow-up request into a fast 503. Explicit values win.
+const TRANSIENT_COOLDOWN_DISABLED = -1;
+
 function prepareConfig(userData: string, importPath?: string) {
   fs.mkdirSync(userData, { recursive: true });
   const configPath = path.join(userData, 'config.yaml');
@@ -62,6 +66,9 @@ function prepareConfig(userData: string, importPath?: string) {
     }
     config.observability ||= {};
     config.observability.usage = { ...config.observability.usage, 'usage-statistics-enabled': true };
+    config.routing ||= {};
+    config.routing.cooldown ||= {};
+    config.routing.cooldown['transient-error-cooldown-seconds'] ??= TRANSIENT_COOLDOWN_DISABLED;
   } else {
     config.host = '127.0.0.1';
     config.port = port;
@@ -78,6 +85,7 @@ function prepareConfig(userData: string, importPath?: string) {
       config['api-keys'] = [randomBytes(32).toString('hex')];
     }
     config['usage-statistics-enabled'] = true;
+    config['transient-error-cooldown-seconds'] ??= TRANSIENT_COOLDOWN_DISABLED;
   }
   const temporary = configPath + '.next';
   fs.writeFileSync(temporary, YAML.stringify(config), { mode: 0o600 });
