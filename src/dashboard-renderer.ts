@@ -49,6 +49,8 @@
   const formatUsd = (value: number) => currency.format(value);
   const formatCredits = (value: number) => `${new Intl.NumberFormat('en-US', { maximumFractionDigits: Math.abs(value) >= 100 ? 0 : 2 }).format(value)} credits`;
   const formatCount = (value: number) => integer.format(Math.round(value));
+  const rateUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const rateCredits = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
   function formatPercent(share: number) {
     const percent = share * 100;
     return percent > 0 && percent < 0.1 ? '<0.1%' : `${percent.toFixed(1)}%`;
@@ -63,6 +65,10 @@
   let requestSequence = 0;
   const creditProviders = new Set<string>();
   const breakdownByTime = new Set<string>();
+  const pricingTier = new Map<string, number>();
+  let openPricing: { cell: HTMLElement; trigger: HTMLButtonElement; card: HTMLElement } | null = null;
+  let pricingTimer = 0;
+  let pricingRefocus = false;
   const byId = (id: string) => document.getElementById(id)!;
 
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text?: string) {
@@ -398,6 +404,120 @@
     return group;
   }
 
+  // GitHub prices some models higher once a prompt passes a threshold. Each
+  // tier is named by the largest prompt it covers, as Copilot's model picker does.
+  function contextTiers(pricing: ModelPricing) {
+    const prompt = pricing.prompt_tokens ? formatTokens(pricing.prompt_tokens) : '';
+    if (!pricing.threshold || !pricing.long_context) return [{ label: prompt, rate: pricing as UsageRate }];
+    const threshold = formatTokens(pricing.threshold);
+    return [
+      { label: threshold, rate: pricing as UsageRate },
+      { label: pricing.prompt_tokens && pricing.prompt_tokens > pricing.threshold ? prompt : `Over ${threshold}`, rate: pricing.long_context },
+    ];
+  }
+
+  function pricingCard(provider: string, series: UsageSeries) {
+    const pricing = dashboard?.rates?.[series.model];
+    const card = el('div', 'pricing-card');
+    card.id = 'pricing-card';
+    card.setAttribute('role', 'group');
+    card.setAttribute('aria-label', `${series.model} pricing`);
+    const head = el('div', 'pricing-head');
+    const title = el('div', 'pricing-title');
+    title.append(el('strong', '', pricing?.name || series.model));
+    if (pricing?.name && pricing.name !== series.model) title.append(el('span', '', series.model));
+    head.append(title);
+    if (pricing?.category) head.append(el('span', 'pricing-badge', pricing.category));
+    const usage = [`From ${harnessOf(series.harness).label}`, plural(series.requests, 'request')];
+    if (series.estimated_requests) usage.push(`${formatCount(series.estimated_requests)} estimated`);
+    if (series.unpriced_requests) usage.push(`${formatCount(series.unpriced_requests)} unpriced`);
+    card.append(head, el('p', 'pricing-note', usage.join(' · ')));
+    if (!pricing) {
+      card.append(el('p', 'pricing-note', 'GitHub does not publish a price for this model.'));
+      return card;
+    }
+    const tiers = contextTiers(pricing);
+    const rates = el('div', 'pricing-rates');
+    const credits = inCredits(provider);
+    const show = (index: number) => {
+      const { rate } = tiers[index];
+      rates.replaceChildren(el('span', 'pricing-unit', `${credits ? 'Credits' : 'USD'} per 1M tokens`));
+      for (const [label, usd] of [['Input', rate.input], ['Output', rate.output], ['Cache read', rate.cached], ['Cache write', rate.write]] as const) {
+        const row = el('div', 'pricing-row');
+        row.append(el('span', '', label), el('span', '', label === 'Cache write' && !usd ? 'Not applicable' : credits ? rateCredits.format(usd * 100) : rateUsd.format(usd)));
+        rates.append(row);
+      }
+    };
+    if (tiers.length > 1) {
+      const selected = Math.min(pricingTier.get(series.model) ?? 0, tiers.length - 1);
+      const group = segmented(`${series.model} context size`, tiers.map((tier, index) => ({ value: String(index), label: tier.label })), String(selected), (value) => {
+        group.querySelectorAll('button').forEach((button, index) => button.setAttribute('aria-pressed', String(index === Number(value))));
+        pricingTier.set(series.model, Number(value));
+        show(Number(value));
+      });
+      group.classList.add('pricing-tiers');
+      card.append(el('span', 'pricing-label', 'Context size'), group, el('p', 'pricing-note', `Prompts over ${formatTokens(pricing.threshold!)} input tokens are billed at the long-context rate.`));
+      show(selected);
+    } else {
+      if (tiers[0].label) {
+        const row = el('div', 'pricing-row context');
+        row.append(el('span', 'pricing-label', 'Context size'), el('span', '', tiers[0].label));
+        card.append(row);
+      }
+      show(0);
+    }
+    card.append(rates);
+    return card;
+  }
+
+  function closePricing() {
+    clearTimeout(pricingTimer);
+    if (!openPricing) return;
+    openPricing.card.remove();
+    openPricing.trigger.setAttribute('aria-expanded', 'false');
+    openPricing = null;
+  }
+  function showPricing(cell: HTMLElement, trigger: HTMLButtonElement, provider: string, series: UsageSeries) {
+    clearTimeout(pricingTimer);
+    if (openPricing?.trigger === trigger) return;
+    closePricing();
+    const card = pricingCard(provider, series);
+    cell.append(card);
+    trigger.setAttribute('aria-expanded', 'true');
+    openPricing = { cell, trigger, card };
+    // The frame is sized to the page, so open upward when the card would pass its bottom edge.
+    const fits = trigger.getBoundingClientRect().bottom + 6 + card.offsetHeight <= document.body.getBoundingClientRect().bottom;
+    card.style.left = `${trigger.offsetLeft}px`;
+    card.style.top = `${fits ? trigger.offsetTop + trigger.offsetHeight + 6 : trigger.offsetTop - 6 - card.offsetHeight}px`;
+  }
+  // The card opens on hover or focus and stays open while the pointer or focus is inside its cell.
+  function attachPricing(cell: HTMLElement, trigger: HTMLButtonElement, provider: string, series: UsageSeries) {
+    const open = () => showPricing(cell, trigger, provider, series);
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', 'pricing-card');
+    trigger.addEventListener('pointerenter', () => {
+      clearTimeout(pricingTimer);
+      pricingTimer = window.setTimeout(open, openPricing ? 0 : 150);
+    });
+    trigger.addEventListener('click', open);
+    trigger.addEventListener('focus', () => {
+      if (pricingRefocus) pricingRefocus = false; else open();
+    });
+    cell.addEventListener('pointerleave', () => {
+      clearTimeout(pricingTimer);
+      if (openPricing?.cell === cell && !cell.contains(document.activeElement)) pricingTimer = window.setTimeout(closePricing, 120);
+    });
+    cell.addEventListener('focusout', (event) => {
+      if (openPricing?.cell === cell && !cell.contains(event.relatedTarget as Node | null) && !cell.matches(':hover')) closePricing();
+    });
+    cell.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || openPricing?.cell !== cell) return;
+      closePricing();
+      pricingRefocus = true;
+      trigger.focus();
+    });
+  }
+
   function breakdown(provider: ProviderUsage, columns: ReturnType<typeof chart>['columns'], harnesses: string[]) {
     const node = el('div', 'breakdown');
     const head = el('div', 'breakdown-head');
@@ -424,9 +544,10 @@
         const value = metricValue(provider.provider, series);
         cell(row, String(index + 1), 'left');
         const modelCell = el('td', 'left model-cell');
-        const name = el('div', 'model-name');
+        const name = el('button', 'model-name');
+        name.type = 'button';
         name.append(harnessMark(series.harness, 'small'), document.createTextNode(series.model));
-        name.title = `${series.model} from ${harnessOf(series.harness).label} · ${plural(series.requests, 'request')}${series.estimated_requests ? ` · ${formatCount(series.estimated_requests)} estimated` : ''}${series.unpriced_requests ? ` · ${formatCount(series.unpriced_requests)} unpriced` : ''}`;
+        attachPricing(modelCell, name, provider.provider, series);
         modelCell.append(name);
         if (value > 0 && peak > 0) {
           const track = el('div', 'bar-track');
@@ -499,6 +620,7 @@
 
   function render() {
     if (!dashboard) return;
+    closePricing();
     const providers = dashboard.providers;
     const all = providers.reduce((sum, provider) => ({
       requests: sum.requests + provider.requests, tokens: sum.tokens + provider.total_tokens, cost: sum.cost + provider.cost_usd,

@@ -16,7 +16,10 @@ interface UsageTotals {
 interface UsageSeries extends UsageTotals { model: string; harness: string }
 interface UsageBucketPoint { series: number; requests: number; total_tokens: number; cost_usd: number }
 interface ProviderUsage extends UsageTotals { provider: string; series: UsageSeries[]; buckets: UsageBucketPoint[][] }
-interface UsageDashboard { start: string; end: string; pricing?: { updated_at: string; models: number; error?: string }; providers: ProviderUsage[] }
+// Rates are USD per million tokens. Prompts over threshold input tokens use long_context.
+interface UsageRate { input: number; cached: number; write: number; output: number; category?: string; threshold?: number; long_context?: UsageRate }
+interface ModelPricing extends UsageRate { name?: string; prompt_tokens?: number }
+interface UsageDashboard { start: string; end: string; pricing?: { updated_at: string; models: number; error?: string }; providers: ProviderUsage[]; rates?: Record<string, ModelPricing> }
 interface HarnessAPI {
   load(): Promise<HarnessLoad>;
   inspect(name: string, file: string): Promise<HarnessPath>;

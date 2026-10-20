@@ -26,7 +26,7 @@ npm test
 npm run dist
 ```
 
-The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.9.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.10.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 
@@ -66,3 +66,5 @@ Keep the desktop proxy running and restart the CLIs after applying. Claude Code'
 Version 1.2.8 fixes duplicate replies in T3 Code and Codex CLI by keeping a stable response item ID throughout Copilot streams. Text and tool call content are preserved, along with the existing dotted-to-hyphenated model-name conversion. It includes the [Copilot compatibility fixes and audit](https://github.com/NaveDanan/CLIProxyAPI/blob/desktop-v1.2.8/docs/copilot-compatibility-audit.md). Its backend source is pinned by the `desktop-v1.2.8` tag in that repository. After upgrading, refresh the model list, apply the CLI configuration again, and restart Claude Code and Codex.
 
 Version 1.2.9 adds a **Usage and cost** section to the Dashboard page with spend and tokens by provider, model, and harness for the past 24 hours, 7, 30, or 90 days. Usage saved before harnesses were recorded is matched to Claude Code and Codex session logs at startup. The proxy no longer blocks the only Copilot account for 60 seconds after an upstream timeout, so follow-up requests are not rejected with immediate 503 errors; set `transient-error-cooldown-seconds` to restore a cooldown. Apply the CLI configuration again so Codex drops the ChatGPT app connectors described above.
+
+Version 1.2.10 shows model pricing in the dashboard. Hover or focus a model in the **Breakdown** table to see its input, output, cache read, and cache write prices per 1M tokens, in USD or AI credits, with the GitHub cost category. Models whose price rises past a prompt-size threshold have a **Context size** switch between the standard and long-context rates, labeled with the prompt limits your Copilot account reports.

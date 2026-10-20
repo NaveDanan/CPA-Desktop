@@ -88,9 +88,46 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
       await dashboard.executeJavaScript("(() => { const plot = document.querySelector('.provider .plot'); const box = plot.getBoundingClientRect(); plot.dispatchEvent(new MouseEvent('mousemove', { clientX: box.right - 2, clientY: box.top + box.height / 2 })); })()");
       assert.ok(await dashboard.executeJavaScript("!document.querySelector('.provider .tooltip').hidden"), 'Hovering a chart shows the period breakdown');
       await screenshot('usage-dashboard-tooltip.png', contents);
+      await showDashboardAt('.breakdown');
+      // Real pointer input runs the card's open and close delays.
+      const frameBox = await contents.executeJavaScript("(() => { const box = document.getElementById('desktop-usage-dashboard').getBoundingClientRect(); return { x: box.left, y: box.top }; })()") as { x: number; y: number };
+      const nameBox = await dashboard.executeJavaScript("(() => { const box = document.querySelector('.breakdown .model-name').getBoundingClientRect(); return { x: box.left + 8, y: box.top + box.height / 2 }; })()") as { x: number; y: number };
+      // DevTools input is hit-tested like a real pointer, so it reaches the sandboxed dashboard frame.
+      contents.debugger.attach('1.3');
+      const pointAt = (x: number, y: number) => contents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y) });
+      await pointAt(frameBox.x + nameBox.x, frameBox.y + nameBox.y);
+      await delay(400);
+      assert.ok(await dashboard.executeJavaScript("document.querySelector('.breakdown .model-name').getAttribute('aria-expanded') === 'true' && !!document.querySelector('.pricing-card')"), 'Hovering a breakdown model shows its pricing');
+      const headingBox = await dashboard.executeJavaScript("(() => { const box = document.querySelector('.breakdown h4').getBoundingClientRect(); return { x: box.left + 4, y: box.top + box.height / 2 }; })()") as { x: number; y: number };
+      await pointAt(frameBox.x + headingBox.x, frameBox.y + headingBox.y);
+      contents.debugger.detach();
+      await delay(400);
+      assert.ok(await dashboard.executeJavaScript("!document.querySelector('.pricing-card')"), 'Moving the pointer away closes the pricing card');
+      assert.ok(await dashboard.executeJavaScript(`(() => {
+        const names = [...document.querySelectorAll('.breakdown .model-name')];
+        names[names.length - 1].click();
+        return document.querySelector('.pricing-card').getBoundingClientRect().bottom <= document.body.getBoundingClientRect().bottom;
+      })()`), 'Pricing cards on the last rows stay inside the dashboard frame');
+      // Prefer a model whose price changes with context size, so the tier switch is captured.
+      await dashboard.executeJavaScript("[...document.querySelectorAll('.breakdown .model-name')].find((name) => (name.click(), document.querySelector('.pricing-tiers')))");
+      assert.ok(await dashboard.executeJavaScript(`(() => {
+        const tiers = document.querySelector('.pricing-tiers');
+        if (!tiers) return true;
+        const rates = () => document.querySelector('.pricing-rates').textContent;
+        const before = rates();
+        tiers.lastElementChild.click();
+        return tiers.lastElementChild.getAttribute('aria-pressed') === 'true' && rates() !== before;
+      })()`), 'Context size switches the shown rates');
+      await delay(200);
+      await screenshot('usage-dashboard-pricing.png', contents);
       if (providers.includes('GitHub Copilot')) {
         await dashboard.executeJavaScript("[...document.querySelectorAll('.provider-head button')].find((button) => button.textContent === 'AI credits').click()");
         assert.ok(await dashboard.executeJavaScript("document.querySelector('.provider .chart h4').textContent.includes('AI credits') && document.querySelector('.provider .summary-total .big').textContent.endsWith('credits')"), 'GitHub Copilot can show AI credits');
+        assert.ok(await dashboard.executeJavaScript(`(() => {
+          const name = document.querySelector('.provider[aria-label="GitHub Copilot"] .breakdown .model-name');
+          name?.click();
+          return !document.querySelector('.pricing-rates') || document.querySelector('.pricing-unit').textContent === 'Credits per 1M tokens';
+        })()`), 'Pricing cards follow the AI credits unit');
         await showDashboardAt('.provider');
         await screenshot('usage-dashboard-credits.png', contents);
         await dashboard.executeJavaScript("[...document.querySelectorAll('.provider-head button')].find((button) => button.textContent.startsWith('USD')).click()");
