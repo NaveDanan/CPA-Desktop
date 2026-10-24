@@ -4,7 +4,7 @@ import assert = require('node:assert/strict');
 import { setTimeout as delay } from 'node:timers/promises';
 import { app, nativeImage, BrowserWindow } from 'electron';
 
-async function run({ window, runtime, outputDir, backendPid }: { window: Electron.BrowserWindow; runtime: ReturnType<typeof import("./runtime.cjs").prepareConfig>; outputDir: string; backendPid: number }) {
+async function run({ window, runtime, tray, outputDir, backendPid }: { window: Electron.BrowserWindow; runtime: ReturnType<typeof import("./runtime.cjs").prepareConfig>; tray: Electron.Tray; outputDir: string; backendPid: number }) {
   fs.mkdirSync(outputDir, { recursive: true });
   const screenshot = async (name: string, view: Pick<Electron.WebContents, "capturePage">) => {
     if (!process.argv.includes('--smoke-no-screenshots')) fs.writeFileSync(path.join(outputDir, name), (await view.capturePage()).toPNG());
@@ -329,10 +329,20 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     await contents.executeJavaScript("document.getElementById('desktop-cli-models').click()");
     assert.equal(await setup.webContents.executeJavaScript("document.getElementById('codex-path').value"), path.join(configDir, 'config.toml'), 'Switching from usage preserves unfinished CLI setup');
   }
+  window.show();
+  window.close();
+  assert.equal(window.isDestroyed(), false, 'Closing retains the desktop window');
+  assert.equal(window.isVisible(), false, 'Closing hides the window in the tray');
+  assert.equal(tray.isDestroyed(), false, 'Tray survives closing the window');
+  const backgroundProbe = await fetch(runtime.origin + '/v8/management/config', { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
+  assert.equal(backgroundProbe.status, 200, 'Proxy keeps serving while the window is closed');
+  await backgroundProbe.arrayBuffer();
+  tray.emit('click');
+  assert.equal(window.isVisible(), true, 'Tray activation reopens the window');
   fs.writeFileSync(path.join(outputDir, 'result.json'), JSON.stringify({
     passed: true, backendPid, origin: runtime.origin, accountCount, modelCount: models.data?.length || 0,
     models: (models.data || []).map((model: CopilotModel) => model.id),
-    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'Copilot usage history', 'usage dashboard', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width'],
+    checks: ['original dashboard', 'automatic management login', 'auth files API', 'models API', 'unauthorized requests rejected', 'sandboxed renderer', 'original Copilot card', 'embedded CLI page', 'Copilot usage history', 'usage dashboard', 'no additional window', 'sidebar navigation', 'form state retained', 'theme synchronization', 'minimum window width', 'close to tray', 'background proxy', 'tray reopen'],
   }, null, 2));
 }
 

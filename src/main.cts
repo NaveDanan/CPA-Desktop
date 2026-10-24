@@ -9,6 +9,7 @@ import { cleanupUpdateCache, takeInstallError, launchUpdateInstaller } from './u
 import { setupTray } from './tray.cjs';
 import { setupTaskbar } from './taskbar.cjs';
 import { attributeHarnesses } from './harness-history.cjs';
+import { setupLinuxDesktop, DESKTOP_FILE } from './linux-desktop.cjs';
 
 function getAppIcon(resources: string) {
   const candidates = [
@@ -41,6 +42,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'CLIProxyAPI Desktop')
 const dataOverride = option(process.argv, '--user-data-dir');
 if (dataOverride) app.setPath('userData', path.resolve(dataOverride));
 if (process.platform === 'win32') app.setAppUserModelId('io.cliproxy.desktop');
+if (process.platform === 'linux') app.setDesktopName(DESKTOP_FILE);
 const launchedInBackground = process.argv.includes('--background');
 let window: BrowserWindow;
 let backend: import("node:child_process").ChildProcess;
@@ -119,6 +121,12 @@ async function start() {
   const appIcon = getAppIcon(resources);
   if (process.platform === 'win32' && app.isPackaged && !option(process.argv, '--smoke-test')) {
     app.setLoginItemSettings({ openAtLogin: true, args: ['--background'] });
+  }
+  if (process.platform === 'linux' && app.isPackaged && process.env.APPIMAGE && !option(process.argv, '--smoke-test')) {
+    try {
+      setupLinuxDesktop({ appImage: process.env.APPIMAGE, userData, iconPath: path.join(resources, 'icon.png') });
+      trace('Linux login startup and application launcher registered');
+    } catch (error) { trace(`Could not register Linux desktop startup: ${error.message}`); }
   }
   Menu.setApplicationMenu(null);
   window = new BrowserWindow({
@@ -264,7 +272,7 @@ async function start() {
   void updates.check();
   const smokeDir = option(process.argv, '--smoke-test');
   if (smokeDir) {
-    await require('./smoke.cjs').run({ window, runtime, outputDir: path.resolve(smokeDir), backendPid: backend.pid });
+    await require('./smoke.cjs').run({ window, runtime, tray, outputDir: path.resolve(smokeDir), backendPid: backend.pid });
     app.quit();
   }
 }

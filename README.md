@@ -4,6 +4,12 @@
 
 The Linux desktop ships as `CLIProxyAPI-Desktop-<version>-linux-x86_64.AppImage` or `linux-arm64.AppImage`. Make it executable with `chmod +x <file>.AppImage`, then run it. On distributions without FUSE 2, install the distribution's FUSE compatibility library or run with `--appimage-extract-and-run`. Desktop VM tokens are encrypted by the OS credential store. Linux needs an unlocked GNOME Keyring or KWallet to save a connection.
 
+Starting with v1.3.1, the first normal AppImage launch registers **CPA for Desktop** in your application drawer and enables background startup when you log in to the Linux desktop. Closing the window keeps the proxy and tray icon running. Select the tray's **Open CPA-Desktop** action or the application-drawer entry to reopen it. **Quit CPA-Desktop** stops the app and proxy for the current session.
+
+Startup uses the original AppImage file and the same app data directory, so saved connections and credentials persist. Keep the AppImage in a permanent location. Launching a moved or newer AppImage updates the launcher and startup paths. Entries live under `$XDG_CONFIG_HOME/autostart` and `$XDG_DATA_HOME/applications`, defaulting to `~/.config/autostart` and `~/.local/share/applications`. You can disable login startup using your desktop's Startup Applications settings; subsequent launches preserve that choice.
+
+Linux tray display depends on the desktop's StatusNotifier/AppIndicator support. GNOME installations without tray support need an [AppIndicator extension](https://github.com/ubuntu/gnome-shell-extension-appindicator) to display the icon. CPA remains available in the application drawer while running in the background.
+
 Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
 
 ```sh
@@ -74,7 +80,7 @@ npm test
 npm run dist
 ```
 
-The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.3.0.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.3.1.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 
