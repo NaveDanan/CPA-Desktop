@@ -188,11 +188,11 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
     return response.json();
   }
   async function discover() {
-    const auth = await get('/v0/management/auth-files', runtime.managementKey);
+    const auth = await get('/v8/management/credentials', runtime.managementKey);
     const accounts = (auth.files || []).filter((account) => (account.provider === 'github-copilot' || account.type === 'github-copilot') && !account.disabled);
     const byID = new Map<string, CopilotModel>();
     for (const account of accounts) {
-      const result = await get(`/v0/management/auth-files/models?name=${encodeURIComponent(account.name)}`, runtime.managementKey);
+      const result = await get(`/v8/management/credentials/models?name=${encodeURIComponent(account.name)}`, runtime.managementKey);
       for (const model of result.models || []) byID.set(model.id, model);
     }
     return [...byID.values()].filter((model) => {

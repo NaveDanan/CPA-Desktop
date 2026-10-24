@@ -10,10 +10,35 @@
 </head>
 <body><main>
   <header class="section-head">
-    <span class="eyebrow">Usage and cost</span>
     <h2>Spend by provider, model, and harness</h2>
     <p>Estimated at the per-model API prices GitHub publishes. GitHub Copilot can also be shown in AI credits ($1 = 100 credits).</p>
   </header>
+  <section class="environment-bar" aria-label="Environment controls">
+    <label for="environment-scope">Environment</label>
+    <select id="environment-scope"><option value="all">All environments</option><option value="local">This computer</option></select>
+    <span id="environment-count" class="muted">This computer</span>
+  </section>
+  <details id="environment-manager" class="environment-manager">
+    <summary>Manage environments</summary>
+    <p class="note">Connect a headless CPA instance using its address and the token from <code>cpa token</code>.</p>
+    <form id="environment-connect" class="connect-form">
+      <label>Name<input id="environment-name" name="name" required maxlength="80" autocomplete="off" placeholder="Development VM"></label>
+      <label>Address<input id="environment-address" name="address" type="url" required placeholder="http://vm-address:8318" autocomplete="off" aria-describedby="connection-help"></label>
+      <label>Connection token<input id="environment-token" name="token" type="password" required minlength="32" maxlength="512" autocomplete="off" spellcheck="false"></label>
+      <button type="submit" class="environment-button primary">Connect</button>
+    </form>
+    <p id="connection-help" class="note">Use HTTPS or a private network / SSH tunnel. The token grants usage, model configuration, and version update access.</p>
+    <p id="environment-message" class="status" role="status" aria-live="polite"></p>
+    <div id="environment-list" class="environment-list"></div>
+    <div class="environment-actions">
+      <button id="environment-models" class="environment-button" type="button" disabled>Apply saved models</button>
+      <button id="environment-version" class="environment-button" type="button" disabled>Sync to desktop version</button>
+      <button id="environment-refresh" class="environment-button" type="button">Check connections</button>
+    </div>
+    <p class="note">Select environments to update. Models use your last applied Configure CLI choices and each VM's own credentials and paths. Version sync restarts selected VMs.</p>
+    <ul id="environment-results" class="environment-results" aria-live="polite"></ul>
+  </details>
+  <p id="environment-coverage" class="status" role="status" aria-live="polite" hidden></p>
   <div class="toolbar">
     <span id="window-label" class="window-label"></span>
     <div class="segmented" role="group" aria-label="Usage metric">
@@ -38,6 +63,7 @@
       <p id="total-note" class="figure-note"></p>
     </div>
     <div id="totals" class="metrics"></div>
+    <div id="combined-chart"></div>
   </section>
   <div id="providers"></div>
   <p id="pricing" class="note"></p>

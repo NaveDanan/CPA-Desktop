@@ -397,9 +397,10 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     dashboardPane.id = 'desktop-usage-dashboard';
     dashboardPane.name = 'desktop-usage-dashboard';
     dashboardPane.title = 'Usage and cost';
-    dashboardPane.setAttribute('sandbox', 'allow-scripts');
+    dashboardPane.setAttribute('sandbox', 'allow-scripts allow-forms');
     let dashboardLoading = false;
-    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage', 'dashboard']);
+    const environmentActions = ['environments', 'connectEnvironment', 'removeEnvironment', 'refreshEnvironments', 'bulkEnvironments'];
+    const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage', 'dashboard', ...environmentActions]);
     window.addEventListener('message', async (event) => {
       const message = event.data;
       const source = event.source === pane.contentWindow ? pane : event.source === usagePane.contentWindow ? usagePane : event.source === dashboardPane.contentWindow ? dashboardPane : null;
@@ -409,8 +410,8 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         return;
       }
       if (!source || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args) ||
-        (source === usagePane && !['usage', 'theme'].includes(message.name)) || (source === dashboardPane && !['dashboard', 'theme'].includes(message.name)) ||
-        (source === pane && message.name === 'dashboard')) return;
+        (source === usagePane && !['usage', 'theme'].includes(message.name)) || (source === dashboardPane && !['dashboard', 'theme', ...environmentActions].includes(message.name)) ||
+        (source === pane && (message.name === 'dashboard' || environmentActions.includes(message.name)))) return;
       try {
         const result = await ipcRenderer.invoke('harness:' + message.name, ...message.args);
         source.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, ...result }, '*');

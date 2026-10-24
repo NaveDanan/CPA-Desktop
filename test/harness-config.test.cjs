@@ -92,7 +92,7 @@ test('discovery prefers canonical Claude aliases and applying supports v8 API-ke
       assert.equal(options.headers.Authorization, 'Bearer v8-test-key');
       return { ok: true, json: async () => ({ models: catalog }) };
     }
-    return { ok: true, json: async () => url.includes('/auth-files/models') ? { models: available } : { files: [{ name: 'copilot', provider: 'github-copilot' }] } };
+    return { ok: true, json: async () => url.includes('/v8/management/credentials/models') ? { models: available } : { files: [{ name: 'copilot', provider: 'github-copilot' }] } };
   };
   const service = createHarnessService({ origin: connection.origin, configPath, managementKey: 'test-management' }, selection.root, request);
   const loaded = await service.load();
@@ -220,8 +220,8 @@ test('live discovery filters disabled and non-Copilot accounts, deduplicates mod
   const request = async (url, options) => {
     calls.push({ url, authorization: options.headers.Authorization });
     let data;
-    if (url.endsWith('/auth-files')) data = { files: [{ name: 'a.json', provider: 'github-copilot' }, { name: 'b.json', type: 'github-copilot' }, { name: 'disabled', provider: 'github-copilot', disabled: true }, { name: 'other', provider: 'codex' }] };
-    else if (url.includes('/auth-files/models')) data = { models };
+    if (url.endsWith('/v8/management/credentials')) data = { files: [{ name: 'a.json', provider: 'github-copilot' }, { name: 'b.json', type: 'github-copilot' }, { name: 'disabled', provider: 'github-copilot', disabled: true }, { name: 'other', provider: 'codex' }] };
+    else if (url.includes('/v8/management/credentials/models')) data = { models };
     else data = { models: catalog };
     return { ok: true, json: async () => data };
   };

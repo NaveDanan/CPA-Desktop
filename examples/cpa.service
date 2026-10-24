@@ -1,0 +1,14 @@
+[Unit]
+Description=CPA headless environment
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/opt/cpa/cpa serve --host 127.0.0.1 --port 8318 --name My-VM
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

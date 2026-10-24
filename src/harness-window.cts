@@ -1,11 +1,34 @@
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, safeStorage, app } from 'electron';
 import path = require('node:path');
 import fs = require('node:fs');
 import { randomBytes } from 'node:crypto';
 import { createHarnessService } from './harness-config.cjs';
+import { createEnvironmentManager, validateBoundaries } from './environments.cjs';
 
 function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<typeof createHarnessService>[0], userData: string) {
   const service = createHarnessService(runtime, userData);
+  const environments = createEnvironmentManager({
+    userData, version: app.getVersion(), localLoad: service.load,
+    localApply: selection => {
+      if (applying) throw new Error('Configuration is already being saved.');
+      applying = true;
+      return service.apply(selection).finally(() => { applying = false; });
+    },
+    codec: {
+      encrypt(value) {
+        if (!safeStorage.isEncryptionAvailable() || (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) throw new Error('Unlock your desktop keyring, then connect again.');
+        return safeStorage.encryptString(value).toString('base64');
+      },
+      decrypt: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
+    },
+    localDashboard: async (boundaries, refreshPricing) => {
+      const query = new URLSearchParams({ boundaries: boundaries.join(',') });
+      if (refreshPricing) query.set('refresh_pricing', 'true');
+      const response = await fetch(`${runtime.origin}/v8/management/observability/usage/dashboard?${query}`, { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
+      if (!response.ok) throw new Error('Local usage is unavailable.');
+      return response.json();
+    },
+  });
 
   let applying = false;
   const readTheme = () => parent.webContents.executeJavaScript(`(() => {
@@ -45,17 +68,15 @@ function setupHarnessWindow(parent: Electron.BrowserWindow, runtime: Parameters<
     if (!response.ok) throw new Error(`Could not load Copilot usage (${response.status}). Check that the proxy is running.`);
     return response.json();
   });
-  handle('harness:dashboard', async (boundaries: unknown, refreshPricing = false) => {
-    if (!Array.isArray(boundaries) || boundaries.length < 2 || boundaries.length > 401 ||
-      !boundaries.every((value, index) => Number.isSafeInteger(value) && (index === 0 || value > boundaries[index - 1]))) throw new Error('Choose a valid usage period.');
-    const query = new URLSearchParams({ boundaries: boundaries.join(',') });
-    if (refreshPricing === true) query.set('refresh_pricing', 'true');
-    const response = await fetch(`${runtime.origin}/v8/management/observability/usage/dashboard?${query}`, {
-      headers: { Authorization: `Bearer ${runtime.managementKey}` },
-    });
-    if (!response.ok) throw new Error(`Could not load usage (${response.status}). Check that the proxy is running.`);
-    return response.json();
+  handle('harness:dashboard', (boundaries: unknown, refreshPricing = false, scope = 'all') => {
+    validateBoundaries(boundaries);
+    return environments.dashboard(boundaries, refreshPricing === true, scope);
   });
+  handle('harness:environments', environments.list);
+  handle('harness:connectEnvironment', environments.connect);
+  handle('harness:removeEnvironment', environments.remove);
+  handle('harness:refreshEnvironments', environments.refresh);
+  handle('harness:bulkEnvironments', environments.bulk);
   handle('harness:load', () => service.load());
   handle('harness:theme', readTheme);
   handle('harness:inspect', (harness, value) => service.inspect(harness, value));

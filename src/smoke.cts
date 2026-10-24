@@ -2,7 +2,7 @@ import fs = require('node:fs');
 import path = require('node:path');
 import assert = require('node:assert/strict');
 import { setTimeout as delay } from 'node:timers/promises';
-import { nativeImage, BrowserWindow } from 'electron';
+import { app, nativeImage, BrowserWindow } from 'electron';
 
 async function run({ window, runtime, outputDir, backendPid }: { window: Electron.BrowserWindow; runtime: ReturnType<typeof import("./runtime.cjs").prepareConfig>; outputDir: string; backendPid: number }) {
   fs.mkdirSync(outputDir, { recursive: true });
@@ -23,23 +23,23 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     const observer = new MutationObserver(() => { if (matches()) { observer.disconnect(); resolve(); } });
     observer.observe(document.body, { childList: true, subtree: true });
   })`);
-  assert.equal(await contents.executeJavaScript(`document.querySelector('.sidebar-brand-logo').src`), `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`, 'Sidebar uses the new app logo');
+  assert.equal(await contents.executeJavaScript(`document.querySelector('.sidebar-brand-logo').src`), `data:image/png;base64,${fs.readFileSync(app.isPackaged ? path.join(process.resourcesPath, 'proxy', 'icon.png') : path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`, 'Sidebar uses the new app logo');
   const management = async (route: string) => {
-    const response = await fetch(runtime.origin + '/v0/management/' + route, { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
+    const response = await fetch(runtime.origin + '/v8/management/' + route, { headers: { Authorization: `Bearer ${runtime.managementKey}` } });
     assert.equal(response.status, 200, route);
     return response.json();
   };
-  const auth = await management('auth-files');
+  const auth = await management('credentials');
   let models;
   for (let attempt = 0; attempt < 90; attempt++) {
-    const modelsResponse = await fetch(runtime.origin + '/v1/models', { headers: { Authorization: `Bearer ${runtime.config['api-keys'][0]}` } });
+    const modelsResponse = await fetch(runtime.origin + '/v1/models', { headers: { Authorization: `Bearer ${(runtime.config.access?.['api-keys'] || runtime.config['api-keys'])[0]}` } });
     assert.equal(modelsResponse.status, 200, 'Authenticated model endpoint');
     models = await modelsResponse.json();
     if (models.data?.length || !(auth.files || []).length) break;
     await delay(1000);
   }
   if ((auth.files || []).length) assert.ok(models.data?.length, 'Models discovered for the existing account');
-  const unauthenticated = await fetch(runtime.origin + '/v0/management/config');
+  const unauthenticated = await fetch(runtime.origin + '/v8/management/config');
   assert.equal(unauthenticated.status, 401, 'Management still requires a key outside the desktop window');
   const forbiddenNode = await contents.executeJavaScript(`typeof window.require`);
   assert.equal(forbiddenNode, 'undefined', 'Renderer has no Node access');
@@ -57,6 +57,7 @@ async function run({ window, runtime, outputDir, backendPid }: { window: Electro
     };
     await waitForDashboard();
     assert.ok(dashboard, 'Usage and cost charts are embedded in the Dashboard page');
+    assert.ok(await dashboard.executeJavaScript("window.harness.environments().then(items => items.some(item => item.id === 'local' && item.status === 'connected'))"), 'Environment controls reach the authenticated main process');
     assert.notEqual(await dashboard.executeJavaScript("document.getElementById('status').className"), 'status error', await dashboard.executeJavaScript("document.getElementById('status').textContent") as string);
     assert.ok(await contents.executeJavaScript(`(() => {
       const frame = document.getElementById('desktop-usage-dashboard');

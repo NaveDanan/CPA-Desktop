@@ -26,6 +26,7 @@
   };
   const HARNESS_ORDER = Object.keys(HARNESSES);
   const PROVIDERS: Record<string, string> = {
+    all: 'All providers',
     [COPILOT]: 'GitHub Copilot', codex: 'OpenAI subscription', claude: 'Claude subscription', 'gemini-cli': 'Gemini CLI',
     gemini: 'Gemini API', aistudio: 'Google AI Studio', vertex: 'Vertex AI', antigravity: 'Antigravity', kimi: 'Kimi', xai: 'xAI', qwen: 'Qwen', iflow: 'iFlow',
   };
@@ -70,6 +71,63 @@
   let pricingTimer = 0;
   let pricingRefocus = false;
   const byId = (id: string) => document.getElementById(id)!;
+  let environments: EnvironmentView[] = [];
+  let scope = 'all';
+  let environmentBusy = false;
+  const selectedEnvironments = new Set<string>();
+
+  function environmentMessage(message: string, error = false) {
+    byId('environment-message').textContent = message;
+    byId('environment-message').className = error ? 'status error' : 'status';
+  }
+  function updateEnvironmentButtons() {
+    for (const id of ['environment-models', 'environment-version']) (byId(id) as HTMLButtonElement).disabled = environmentBusy || selectedEnvironments.size === 0;
+    (byId('environment-refresh') as HTMLButtonElement).disabled = environmentBusy;
+    for (const field of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>('#environment-connect input, #environment-connect button, #environment-list input, #environment-list button')) field.disabled = environmentBusy;
+  }
+  function renderEnvironments() {
+    const picker = byId('environment-scope') as HTMLSelectElement;
+    picker.replaceChildren(new Option('All environments', 'all'), ...environments.map(item => new Option(item.name, item.id)));
+    if (!environments.some(item => item.id === scope) && scope !== 'all') scope = 'all';
+    picker.value = scope;
+    byId('environment-count').textContent = `${environments.length} environment${environments.length === 1 ? '' : 's'}`;
+    for (const id of selectedEnvironments) if (!environments.some(item => item.id === id)) selectedEnvironments.delete(id);
+    byId('environment-list').replaceChildren(...environments.map(item => {
+      const row = el('div', 'environment-row');
+      const label = el('label');
+      const check = el('input'); check.type = 'checkbox'; check.checked = selectedEnvironments.has(item.id);
+      check.setAttribute('aria-label', `Select ${item.name}`);
+      check.addEventListener('change', () => { if (check.checked) selectedEnvironments.add(item.id); else selectedEnvironments.delete(item.id); updateEnvironmentButtons(); });
+      const text = el('span'); text.append(el('strong', '', item.name), el('small', '', item.address)); label.append(check, text);
+      const state = el('span', 'environment-state' + (item.error || item.updateError ? ' error' : ''), `${item.version ? 'v' + item.version + ' · ' : ''}${item.status === 'connected' ? 'Connected' : item.status === 'offline' ? 'Offline' : 'Not checked'}`);
+      if (item.error || item.updateError) state.append(el('small', '', item.error || item.updateError));
+      row.append(label, state);
+      if (item.id !== 'local') {
+        const remove = el('button', 'environment-button', 'Disconnect'); remove.type = 'button'; remove.setAttribute('aria-label', `Disconnect ${item.name}`);
+        remove.addEventListener('click', () => void environmentOperation(async () => {
+          environments = await window.harness.removeEnvironment(item.id); renderEnvironments(); await load(); environmentMessage(`${item.name} disconnected.`);
+        })); row.append(remove);
+      }
+      return row;
+    })); updateEnvironmentButtons();
+  }
+  async function environmentOperation(action: () => Promise<void>) {
+    if (environmentBusy) return;
+    environmentBusy = true; updateEnvironmentButtons();
+    try { await action(); } catch (error) { environmentMessage(error instanceof Error ? error.message : 'Environment operation failed.', true); }
+    finally { environmentBusy = false; updateEnvironmentButtons(); }
+  }
+  async function syncEnvironments(action: 'models' | 'version') {
+    const ids = [...selectedEnvironments];
+    await environmentOperation(async () => {
+      byId('environment-results').replaceChildren();
+      environmentMessage(action === 'models' ? 'Applying saved models…' : 'Updating versions. Waiting for each VM to restart…');
+      const results = await window.harness.bulkEnvironments(action, ids);
+      byId('environment-results').replaceChildren(...results.map(result => el('li', result.ok ? '' : 'error', `${environments.find(item => item.id === result.id)?.name || result.id}: ${result.message}`)));
+      environmentMessage(results.every(result => result.ok) ? 'Selected environments updated.' : 'Some environments could not be updated. See results below.', results.some(result => !result.ok));
+      environments = await window.harness.environments(); renderEnvironments(); await load();
+    });
+  }
 
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text?: string) {
     const node = document.createElement(tag);
@@ -643,6 +701,13 @@
       metrics.append(metricNode);
     }
     byId('providers').replaceChildren(...providers.map(providerSection));
+    const combined: ProviderUsage = { ...providers[0], provider: 'all', series: [], buckets: periods.map((): UsageBucketPoint[] => []) };
+    for (const provider of providers) {
+      const offset = combined.series.length;
+      combined.series.push(...provider.series);
+      provider.buckets.forEach((bucket, i) => combined.buckets[i].push(...bucket.map(point => ({ ...point, series: point.series + offset }))));
+    }
+    byId('combined-chart').replaceChildren(...(providers.length ? [chart(combined).node] : []));
     const pricing = dashboard.pricing;
     byId('pricing').textContent = !pricing?.models ? 'Model prices are unavailable. Click Refresh to retry.'
       : `${pricing.error ? `${pricing.error} Using saved prices. ` : ''}Prices from GitHub's models and pricing page, updated ${dateTimeFormat.format(new Date(pricing.updated_at))}. They refresh when the app starts and when you click Refresh. Requests saved before cache details were recorded are estimated, and requests saved before harness tracking show as Not recorded.`;
@@ -663,7 +728,7 @@
     document.querySelector('main')!.classList.add('loading');
     setStatus(refreshPricing ? 'Updating prices from GitHub and loading usage…' : 'Loading usage…');
     try {
-      const result = await window.harness.dashboard(range.boundaries.map((date) => date.getTime()), refreshPricing);
+      const result = await window.harness.dashboard(range.boundaries.map((date) => date.getTime()), refreshPricing, scope);
       if (sequence !== requestSequence) return;
       dashboard = result;
       resolution = range.resolution;
@@ -675,8 +740,16 @@
         : `${dayFormat.format(first)} to ${dayFormat.format(new Date(last.getTime() - 1))}`;
       setStatus('');
       render();
+      const coverage = result.environments || [];
+      const missing = coverage.filter(item => !item.available);
+      byId('environment-coverage').hidden = missing.length === 0;
+      byId('environment-coverage').textContent = missing.length ? `${coverage.length - missing.length} of ${coverage.length} environments included. ${missing.map(item => item.name + ': ' + item.error).join(' ')}` : '';
+      if (coverage.length && missing.length === coverage.length) setStatus('Usage is unavailable for the selected environment. Check the connection and refresh.', true);
     } catch (error) {
-      if (sequence === requestSequence) setStatus(error instanceof Error ? error.message : 'Could not load usage.', true);
+      if (sequence === requestSequence) {
+        dashboard = null; byId('providers').replaceChildren(); byId('overview').hidden = true; byId('pricing').textContent = ''; byId('environment-coverage').hidden = true;
+        setStatus(error instanceof Error ? error.message : 'Could not load usage.', true);
+      }
     } finally {
       if (sequence === requestSequence) {
         refresh.disabled = false;
@@ -707,7 +780,28 @@
     void load();
   });
   byId('refresh').addEventListener('click', () => void load(true));
+  byId('environment-scope').addEventListener('change', event => { scope = (event.target as HTMLSelectElement).value; void load(); });
+  byId('environment-connect').addEventListener('submit', event => {
+    event.preventDefault();
+    const name = (byId('environment-name') as HTMLInputElement).value.trim();
+    const address = (byId('environment-address') as HTMLInputElement).value.trim();
+    const tokenField = byId('environment-token') as HTMLInputElement;
+    const token = tokenField.value; tokenField.value = '';
+    void environmentOperation(async () => {
+      environmentMessage('Connecting…');
+      const before = new Set(environments.map(item => item.id));
+      environments = await window.harness.connectEnvironment({ name, address, token });
+      for (const item of environments) if (!before.has(item.id)) selectedEnvironments.add(item.id);
+      renderEnvironments(); environmentMessage(`${name} connected.`); await load();
+    });
+  });
+  byId('environment-refresh').addEventListener('click', () => void environmentOperation(async () => {
+    environmentMessage('Checking connections…'); environments = await window.harness.refreshEnvironments(); renderEnvironments(); environmentMessage('Connection check complete.'); await load();
+  }));
+  byId('environment-models').addEventListener('click', () => void syncEnvironments('models'));
+  byId('environment-version').addEventListener('click', () => void syncEnvironments('version'));
   // The parent sizes this frame to its content so the dashboard scrolls as one page.
   new ResizeObserver(() => parent.postMessage({ channel: 'harness:resize', height: Math.ceil(document.body.getBoundingClientRect().height) }, '*')).observe(document.body);
+  void window.harness.environments().then(items => { environments = items; renderEnvironments(); }).catch(error => environmentMessage(error.message, true));
   void load();
 })();

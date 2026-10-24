@@ -1,0 +1,92 @@
+name: desktop-release
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Version tag matching package.json, for example v1.3.0
+        required: true
+      management_url:
+        description: HTTPS URL of the exact management.html to bundle
+        required: true
+      management_sha256:
+        description: Expected SHA-256 of management.html
+        required: true
+      backend_ref:
+        description: Published commit or tag in NaveDanan/CLIProxyAPI with v8 usage/dashboard support
+        required: true
+permissions:
+  contents: write
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CPA_BACKEND_ROOT: ${{ github.workspace }}/backend
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag }}
+      - name: Check out pinned proxy backend
+        uses: actions/checkout@v6
+        with:
+          repository: NaveDanan/CLIProxyAPI
+          ref: ${{ inputs.backend_ref }}
+          path: backend
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+      - run: npm ci
+      - name: Validate release and fetch pinned UI
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MANAGEMENT_URL: ${{ inputs.management_url }}
+          MANAGEMENT_SHA256: ${{ inputs.management_sha256 }}
+        run: |
+          node -e 'if(process.env.RELEASE_TAG !== "v" + require("./package.json").version) throw Error("Version tag mismatch")'
+          node -e 'const u=new URL(process.env.MANAGEMENT_URL); if(u.protocol!=="https:" || !/^[a-f0-9]{64}$/i.test(process.env.MANAGEMENT_SHA256)) throw Error("Invalid UI source")'
+          curl --fail --location --proto '=https' --proto-redir '=https' "$MANAGEMENT_URL" -o management-release.html
+          node -e 'const fs=require("fs"), c=require("crypto"); if(c.createHash("sha256").update(fs.readFileSync("management-release.html")).digest("hex")!==process.env.MANAGEMENT_SHA256.toLowerCase()) throw Error("UI checksum mismatch")'
+      - run: npm run prepare:resources -- --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --ui management-release.html
+      - run: npm test
+      - name: Package Windows
+        if: matrix.platform == 'win32'
+        run: npm run dist
+      - name: Package Linux
+        if: matrix.platform == 'linux'
+        run: |
+          npm run dist:linux -- --${{ matrix.arch }}
+          npm run dist:headless -- --${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ../dist/desktop/*.exe
+            ../dist/desktop/*.AppImage
+            ../dist/desktop/CPA-Headless-*.tar.gz
+      - name: Attach versioned packages to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release view "$RELEASE_TAG"
+          find ../dist/desktop -maxdepth 1 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name 'CPA-Headless-*.tar.gz' \) -exec gh release upload "$RELEASE_TAG" '{}' --clobber \;

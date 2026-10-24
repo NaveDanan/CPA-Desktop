@@ -1,5 +1,53 @@
 # CLIProxyAPI Desktop
 
+## Linux desktop and connected VMs
+
+The Linux desktop ships as `CLIProxyAPI-Desktop-<version>-linux-x86_64.AppImage` or `linux-arm64.AppImage`. Make it executable with `chmod +x <file>.AppImage`, then run it. On distributions without FUSE 2, install the distribution's FUSE compatibility library or run with `--appimage-extract-and-run`. Desktop VM tokens are encrypted by the OS credential store. Linux needs an unlocked GNOME Keyring or KWallet to save a connection.
+
+Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
+
+```sh
+mkdir -p ~/.local/opt/cpa
+tar -xzf CPA-Headless-<version>-linux-x64.tar.gz -C ~/.local/opt/cpa
+~/.local/opt/cpa/cpa serve --name Development --import-config /path/to/config.yaml
+```
+
+The proxy and existing management UI listen on loopback port 8317. The connection API listens on loopback port 8318. State, credentials, and usage are stored under `$XDG_STATE_HOME/cpa`, defaulting to `~/.local/state/cpa`. Use `--data-dir /absolute/path` on every command to select another location. Import runs only on the first start; existing OAuth accounts and API keys are copied into this isolated state. The VM uses its own provider sign-ins. To add them through the management UI, forward port 8317 over SSH and open `http://localhost:8317/management.html` using the management key stored in the VM's `desktop-secrets.json`.
+
+For a direct private-network connection, run `cpa serve --host <private-VM-address> --port 8318 --name Development`. For an SSH connection, keep the default loopback binding and run this on the desktop computer:
+
+```sh
+ssh -N -L 18318:127.0.0.1:8318 user@vm
+```
+
+Run `cpa token` on the VM, then open **Dashboard → Manage environments** in the desktop. Enter a name, `http://127.0.0.1:18318` for the tunnel or the VM's private address, and the token. Public connections should use an HTTPS reverse proxy to port 8318. The token grants usage, model application, and software update access. `cpa token rotate` revokes the old token immediately; disconnect and reconnect in the desktop afterward. Tokens never appear in dashboard responses or browser storage.
+
+The **Environment** selector switches between all environments, this computer, and an individual VM. The overview chart and provider graphs use the same time buckets across VMs. Unavailable environments are explicitly excluded and named above the results. CPA must remain running on each VM to serve its persisted usage.
+
+Select environments in **Manage environments**, then:
+
+- **Apply saved models** copies the last applied **Configure CLI** model choices. Each target keeps its own configuration paths, proxy API key, provider credentials, and backups. Models must be available to that target's Copilot accounts. Restart the target CLIs after applying.
+- **Sync to desktop version** downloads the exact desktop version's matching headless release from `NaveDanan/CPA-Desktop`. It verifies GitHub's SHA-256 asset digest before extraction, restarts through the bundled launcher, and rolls back if startup fails. Each result reports success only after that VM reports the target running version. A release without a matching headless asset produces a failure and leaves the current version running. Interrupted updates boot the previous working release.
+
+Always launch through `cpa serve` so update supervision stays active. Do not overlay a new archive onto a running installation. A systemd user-service example is in [examples/cpa.service](examples/cpa.service). Copy it to `~/.config/systemd/user/cpa.service`, adjust the name and host, then run `systemctl --user daemon-reload` and `systemctl --user enable --now cpa`. To keep it running without an interactive login, configure user lingering with `loginctl enable-linger <username>`.
+
+Model choices can also be applied directly with `cpa models --file selection.json`. The file contains `codex` and/or `claude` entries with `enabled`, `all`, `models`, and optional `defaultModel`, for example:
+
+```json
+{"codex":{"enabled":true,"all":true,"models":[]},"claude":{"enabled":true,"all":true,"models":[]}}
+```
+
+Build from the `desktop` directory with Node.js 22+ and Go 1.26+:
+
+```sh
+npm ci
+npm run prepare:resources -- --platform linux --arch x64 --ui /path/to/management.html
+npm run dist:linux
+npm run dist:headless
+```
+
+AppImage packaging requires Linux or WSL. For ARM64, prepare with `--arch arm64` and pass `--arm64` to both dist commands. On Windows, `npm run dist` builds the existing NSIS installer after preparing `--platform win32 --arch x64`. Set `CPA_GO` to the Go executable if it is outside PATH. Set `CPA_BACKEND_ROOT` when the Go checkout is somewhere other than the desktop repository's parent. Completed archives and installers go to the repository's `dist/desktop/` directory. The manual **desktop-release** GitHub workflow builds Windows and both Linux architectures and uploads them to an existing version release. Supply its tag, a published backend commit/tag from `NaveDanan/CLIProxyAPI` with v8 usage dashboard support, and the exact management HTML's HTTPS URL and SHA-256. All platforms then bundle the same verified sources. Linux desktop upgrades use the release download page; one-click VM synchronization is available from either desktop platform.
+
 Electron hosts the existing management center and adds a desktop CLI configuration window. It bundles the Go server, starts it hidden, and signs the local window into management automatically. Closing the window hides it in the system tray and keeps the proxy running. Click the tray icon or choose **Open CPA-Desktop** to reopen it. Choose **Quit CPA-Desktop** in the tray menu to stop the proxy and exit. A second launch focuses the existing window. An occupied server port produces an error instead of starting a duplicate.
 
 ## Release updates
@@ -26,7 +74,7 @@ npm test
 npm run dist
 ```
 
-The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.2.10.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
+The installer is `../dist/desktop/CLIProxyAPI-Desktop-Setup-1.3.0.exe`. It installs per user and creates Desktop and Start menu shortcuts. No Go, Node.js, terminal, or browser is required on the installed machine.
 
 Application and build-tool sources live in `src/`. CommonJS sources use `.cts`; browser scripts use `.ts`. `npm run build` compiles them to the original runtime paths. Generated JavaScript is ignored by Git. Start, tests, resource preparation, and packaging compile automatically; `npm run typecheck` checks without emitting files. All source files reject implicit `any` types. Existing JavaScript regression tests exercise the compiled application.
 

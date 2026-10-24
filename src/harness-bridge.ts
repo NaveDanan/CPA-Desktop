@@ -26,7 +26,12 @@ window.harness = {
   restore: (selection) => invoke<HarnessRestore>('restore', selection),
   theme: () => invoke<HarnessTheme>('theme'),
   usage: (period, start, end, refreshPricing) => invoke<CopilotUsageSummary>('usage', period, start, end, refreshPricing),
-  dashboard: (boundaries, refreshPricing) => invoke<UsageDashboard>('dashboard', boundaries, refreshPricing),
+  environments: () => invoke<EnvironmentView[]>('environments'),
+  connectEnvironment: value => invoke<EnvironmentView[]>('connectEnvironment', value),
+  removeEnvironment: id => invoke<EnvironmentView[]>('removeEnvironment', id),
+  refreshEnvironments: () => invoke<EnvironmentView[]>('refreshEnvironments'),
+  bulkEnvironments: (action, ids) => invoke<EnvironmentOutcome[]>('bulkEnvironments', action, ids),
+  dashboard: (boundaries, refreshPricing, scope) => invoke<UsageDashboard>('dashboard', boundaries, refreshPricing, scope),
   onTheme: (callback) => themeListeners.add(callback),
 };
 

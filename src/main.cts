@@ -40,7 +40,7 @@ app.setName('CLIProxyAPI Desktop');
 app.setPath('userData', path.join(app.getPath('appData'), 'CLIProxyAPI Desktop'));
 const dataOverride = option(process.argv, '--user-data-dir');
 if (dataOverride) app.setPath('userData', path.resolve(dataOverride));
-app.setAppUserModelId('io.cliproxy.desktop');
+if (process.platform === 'win32') app.setAppUserModelId('io.cliproxy.desktop');
 const launchedInBackground = process.argv.includes('--background');
 let window: BrowserWindow;
 let backend: import("node:child_process").ChildProcess;
@@ -64,7 +64,7 @@ async function waitForBackend(runtime: ReturnType<typeof prepareConfig>) {
     if (bootError) throw bootError;
     if (backend.exitCode !== null) throw new Error('The proxy stopped during startup. See proxy.log in the app data folder.');
     try {
-      const result = await fetch(`${runtime.origin}/v0/management/config`, {
+      const result = await fetch(`${runtime.origin}/v8/management/config`, {
         headers: { Authorization: `Bearer ${runtime.managementKey}` },
         signal: AbortSignal.timeout(1000),
       });
@@ -87,7 +87,7 @@ async function start() {
   trace('Local port available');
   const resources = app.isPackaged ? path.join(process.resourcesPath, 'proxy') : path.join(__dirname, 'resources');
   const staticDir = app.isPackaged ? path.join(resources, 'static') : resources;
-  const binary = path.join(resources, 'cli-proxy-api.exe');
+  const binary = path.join(resources, process.platform === 'win32' ? 'cli-proxy-api.exe' : 'cli-proxy-api');
   if (!fs.existsSync(binary) || !fs.existsSync(path.join(staticDir, 'management.html'))) {
     throw new Error('Bundled proxy or management page is missing. Run prepare:resources before starting.');
   }
@@ -171,7 +171,7 @@ async function start() {
   const trustedUpdateEvent = (event: Electron.IpcMainInvokeEvent) => event.sender === contents && event.senderFrame === contents.mainFrame;
   const branding = {
     name: 'CPA for Desktop',
-    logo: `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`,
+    logo: `data:image/png;base64,${fs.readFileSync(app.isPackaged ? path.join(resources, 'icon.png') : path.join(__dirname, 'assets', 'icon.png')).toString('base64')}`,
   };
   ipcMain.handle('desktop-branding', (event) => trustedUpdateEvent(event) ? branding : null);
   const cacheDir = path.join(userData, 'updates');

@@ -1,5 +1,10 @@
 interface CopilotModel { id: string; display_name?: string; owned_by?: string; clients?: string[] }
 interface CliSelection { enabled: boolean; path: string; all: boolean; models: string[]; defaultModel?: string; appsManaged?: boolean }
+type PortableSelections = Record<string, Pick<CliSelection, 'enabled' | 'all' | 'models' | 'defaultModel'>>;
+interface EnvironmentInfo { protocol: 1; id: string; name: string; version: string; platform: string; arch: string; updateError?: string }
+interface EnvironmentView { id: string; name: string; address: string; version?: string; status: 'connected' | 'offline' | 'unchecked'; error?: string; checkedAt?: string; updateError?: string }
+interface EnvironmentOutcome { id: string; ok: boolean; message: string }
+interface EnvironmentUsage { id: string; name: string; available: boolean; error?: string; checkedAt: string }
 type CliSelections = Record<string, CliSelection>;
 interface HarnessTheme { name: string; tokens: Record<string, string> }
 interface HarnessLoad { defaults: Record<string, string>; saved: CliSelections; models: CopilotModel[]; modelError?: string }
@@ -19,7 +24,7 @@ interface ProviderUsage extends UsageTotals { provider: string; series: UsageSer
 // Rates are USD per million tokens. Prompts over threshold input tokens use long_context.
 interface UsageRate { input: number; cached: number; write: number; output: number; category?: string; threshold?: number; long_context?: UsageRate }
 interface ModelPricing extends UsageRate { name?: string; prompt_tokens?: number }
-interface UsageDashboard { start: string; end: string; pricing?: { updated_at: string; models: number; error?: string }; providers: ProviderUsage[]; rates?: Record<string, ModelPricing> }
+interface UsageDashboard { start: string; end: string; pricing?: { updated_at: string; models: number; error?: string }; providers: ProviderUsage[]; rates?: Record<string, ModelPricing>; environments?: EnvironmentUsage[]; partial?: boolean }
 interface HarnessAPI {
   load(): Promise<HarnessLoad>;
   inspect(name: string, file: string): Promise<HarnessPath>;
@@ -28,7 +33,12 @@ interface HarnessAPI {
   restore(selection: Record<string, Pick<CliSelection, 'path' | 'enabled'>>): Promise<HarnessRestore>;
   theme(): Promise<HarnessTheme>;
   usage(period: string, start?: string, end?: string, refreshPricing?: boolean): Promise<CopilotUsageSummary>;
-  dashboard(boundaries: number[], refreshPricing?: boolean): Promise<UsageDashboard>;
+  environments(): Promise<EnvironmentView[]>;
+  connectEnvironment(value: {name: string; address: string; token: string}): Promise<EnvironmentView[]>;
+  removeEnvironment(id: string): Promise<EnvironmentView[]>;
+  refreshEnvironments(): Promise<EnvironmentView[]>;
+  bulkEnvironments(action: 'models' | 'version', ids: string[]): Promise<EnvironmentOutcome[]>;
+  dashboard(boundaries: number[], refreshPricing?: boolean, scope?: string): Promise<UsageDashboard>;
   onTheme(callback: (theme: HarnessTheme) => void): void;
 }
 interface Window { harness: HarnessAPI }

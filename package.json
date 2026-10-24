@@ -1,15 +1,18 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.2.10",
-  "description": "The CLIProxyAPI management center in a Windows desktop application",
+  "version": "1.3.0",
+  "description": "The CLIProxyAPI management center for Windows, Linux, and connected headless environments",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
   "private": true,
+  "desktopName": "CPA Desktop",
   "main": "main.cjs",
   "scripts": {
     "start": "node scripts/start.cjs",
     "prepare:resources": "node scripts/prepare.cjs",
     "dist": "node scripts/package.cjs",
+    "dist:linux": "npm run build && node scripts/package.cjs --linux",
+    "dist:headless": "npm run build && node scripts/package.cjs --headless",
     "test": "node --test test/*.test.cjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -46,6 +49,7 @@
       "taskbar.cjs",
       "smoke.cjs",
       "harness*.cjs",
+      "environments.cjs",
       "harness.html",
       "harness.css",
       "harness-renderer.js",
@@ -61,10 +65,6 @@
       "assets/icon.png"
     ],
     "extraResources": [
-      {
-        "from": "resources/cli-proxy-api.exe",
-        "to": "proxy/cli-proxy-api.exe"
-      },
       {
         "from": "resources/management.html",
         "to": "proxy/static/management.html"
@@ -85,7 +85,17 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",
-      "signExecutable": false
+      "signExecutable": false,
+      "extraResources": [{ "from": "resources/cli-proxy-api.exe", "to": "proxy/cli-proxy-api.exe" }]
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "executableName": "cpa-desktop",
+      "syncDesktopName": true,
+      "extraResources": [{ "from": "resources/cli-proxy-api", "to": "proxy/cli-proxy-api" }],
+      "artifactName": "CLIProxyAPI-Desktop-${version}-linux-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": true,

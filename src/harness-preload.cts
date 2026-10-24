@@ -12,7 +12,12 @@ const api: HarnessAPI = {
   restore: (selection) => invoke('harness:restore', selection),
   theme: () => invoke('harness:theme'),
   usage: (period, start, end) => invoke('harness:usage', period, start, end),
-  dashboard: (boundaries, refreshPricing) => invoke('harness:dashboard', boundaries, refreshPricing),
+  environments: () => invoke('harness:environments'),
+  connectEnvironment: value => invoke('harness:connectEnvironment', value),
+  removeEnvironment: id => invoke('harness:removeEnvironment', id),
+  refreshEnvironments: () => invoke('harness:refreshEnvironments'),
+  bulkEnvironments: (action, ids) => invoke('harness:bulkEnvironments', action, ids),
+  dashboard: (boundaries, refreshPricing, scope) => invoke('harness:dashboard', boundaries, refreshPricing, scope),
   onTheme: (callback) => ipcRenderer.on('harness:theme-changed', (_event, theme) => callback(theme)),
 };
 contextBridge.exposeInMainWorld('harness', api);
