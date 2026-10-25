@@ -55,7 +55,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - run: npm ci
+      - name: Install Windows Electron runtime
+        if: matrix.platform == 'win32'
+        run: node node_modules/electron/install.js
       - name: Validate release and fetch pinned UI
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
