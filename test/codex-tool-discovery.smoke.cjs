@@ -10,10 +10,11 @@ const TOML = require('smol-toml');
 async function main() {
   const binary = process.argv[2] || process.env.CPA_CODEX_BIN;
   assert(binary, 'Pass the Codex executable path or set CPA_CODEX_BIN.');
-  const temporary = path.resolve(__dirname, '../../temp');
+  const backend = process.env.CPA_BACKEND_ROOT || path.resolve(__dirname, '../..');
+  const temporary = path.join(backend, 'temp');
   fs.mkdirSync(temporary, { recursive: true });
   const root = fs.mkdtempSync(path.join(temporary, 'codex-discovery-'));
-  const template = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../internal/registry/models/codex_client_models.json')))
+  const template = JSON.parse(fs.readFileSync(path.join(backend, 'internal/registry/models/codex_client_models.json')))
     .models.find((model) => model.slug === 'gpt-6.1-sol');
   const mcpFile = path.join(root, 'mcp.cjs');
   fs.writeFileSync(mcpFile, `
