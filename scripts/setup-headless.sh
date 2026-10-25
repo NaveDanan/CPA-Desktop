@@ -310,8 +310,27 @@ def installed(directory):
     return metadata(json.loads((root / 'package.json').read_text()), binary)
 
 def destination(archive, directory, data_directory):
-    version = inspect(archive)[0]['version']
+    info, entries = inspect(archive)
+    version = info['version']
     root = root_path(directory)
+    data = root_path(data_directory)
+    def separate(candidate):
+        if candidate == data or candidate in data.parents or data in candidate.parents:
+            raise ValueError('Keep installation and saved data folders separate.')
+    def compatible(candidate):
+        if not candidate.exists():
+            return True
+        if not candidate.is_dir() or (any(candidate.iterdir()) and not (candidate / 'package.json').is_file()):
+            return False
+        for name, entry in entries.items():
+            try:
+                file = target(candidate, name)
+                if file.exists() and not matches(file, entry):
+                    return False
+            except ValueError:
+                return False
+        return True
+    separate(root)
     previous = ''
     package_file = target(root, 'package.json')
     if package_file.exists():
@@ -320,17 +339,24 @@ def destination(archive, directory, data_directory):
         package = json.loads(package_file.read_text())
         if package.get('name') != 'cpa-headless':
             raise ValueError('The installation folder belongs to another application.')
-        if package.get('version') != version:
+        if package.get('version') != version or not compatible(root):
             old_version = installed(str(root))['version']
             if tuple(map(int, version.split('.'))) < tuple(map(int, old_version.split('.'))):
                 raise ValueError('The selected archive is older than the installed CPA version. Choose the current or a newer archive.')
             previous = str(root)
             suffix = '-' + old_version
             base = root.name[:-len(suffix)] if root.name.endswith(suffix) else root.name
-            root = root_path(str(root.parent / (base + '-' + version)))
-    data = root_path(data_directory)
-    if root == data or root in data.parents or data in root.parents:
-        raise ValueError('Keep installation and saved data folders separate.')
+            for index in range(1, 1001):
+                candidate = root.parent / (base + '-' + version + (('-' + str(index)) if index > 1 else ''))
+                if candidate.is_symlink():
+                    continue
+                candidate = root_path(str(candidate))
+                separate(candidate)
+                if compatible(candidate):
+                    root = candidate
+                    break
+            else:
+                raise ValueError('No free versioned installation folder is available. Choose a new installation folder.')
     return {'directory': str(root), 'previous': previous, 'version': version}
 
 def install(archive, directory):
@@ -592,7 +618,7 @@ if [[ -n "$CPA_ARCHIVE" ]]; then
   CPA_NEXT_INSTALL_DIR=$(cpa_field "$CPA_WORK/destination.json" directory)
   CPA_PREVIOUS_INSTALL_DIR=$(cpa_field "$CPA_WORK/destination.json" previous)
   if [[ "$CPA_NEXT_INSTALL_DIR" != "$CPA_INSTALL_DIR" ]]; then
-    say "The older CPA installation will remain in $CPA_INSTALL_DIR."
+    say "The existing CPA installation will remain in $CPA_INSTALL_DIR."
     say "CPA $CPA_VERSION will be installed in $CPA_NEXT_INSTALL_DIR."
     say "Saved accounts, tokens, and configuration stay in $CPA_DATA_DIR."
     confirm 'Install the new version in this separate folder?' || exit 0

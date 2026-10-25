@@ -96,6 +96,22 @@ test('headless setup wizard helpers preserve unrelated files and credentials', {
     assert.notEqual(run('destination', nextArchive, previous, destination.directory).status, 0, 'runtime and state cannot overlap');
   });
 
+  await t.test('same-version mixed files and occupied upgrade folders use a fresh runtime folder', () => {
+    const mixed = path.join(root, 'mixed-install', 'cpa'); ok('install', archive, mixed);
+    fs.writeFileSync(path.join(mixed, 'headless.cjs'), 'older or locally modified code');
+    const occupied = mixed + '-1.3.1'; ok('install', archive, occupied);
+    fs.writeFileSync(path.join(occupied, 'headless.cjs'), 'another modified runtime');
+    const selected = ok('destination', archive, mixed, data);
+    assert.notEqual(selected.directory, mixed);
+    assert.notEqual(selected.directory, occupied);
+    ok('install', archive, selected.directory);
+    assert.equal(fs.readFileSync(path.join(selected.directory, 'headless.cjs'), 'utf8'), 'headless');
+    assert.equal(fs.readFileSync(path.join(mixed, 'headless.cjs'), 'utf8'), 'older or locally modified code');
+    assert.equal(fs.readFileSync(path.join(occupied, 'headless.cjs'), 'utf8'), 'another modified runtime');
+    assert.equal(fs.readFileSync(state, 'utf8'), '{"token":"fixture-private-token"}');
+    assert.equal(ok('destination', archive, mixed, data).directory, selected.directory, 'repeat setup reuses the matching runtime');
+  });
+
   await t.test('cleanup removes only identical archive files and leaves changed and unrelated files', () => {
     const loose = path.join(root, 'earlier-extraction'); ok('install', archive, loose);
     fs.writeFileSync(path.join(loose, 'notes.txt'), 'my notes');

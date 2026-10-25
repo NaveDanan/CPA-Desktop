@@ -27,6 +27,8 @@ The setup wizard adds the installation folder to PATH in `~/.bashrc` and `~/.pro
 
 When the selected archive is newer than an existing CPA installation, the wizard installs it in a separate versioned folder, such as `~/.local/opt/cpa-1.4.0`. It keeps the old runtime and reuses the saved data directory, accounts, and token. After confirmation it updates the boot service and checks both APIs. If the new service fails its checks, it restores the previous service definition.
 
+If the installed files differ even though their package version is the same, the wizard also selects a fresh runtime folder. It skips occupied folders whose files do not match, using a numbered suffix when needed. Existing runtime files remain intact and repeated setup reuses a matching installation.
+
 Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
 
 ```sh
