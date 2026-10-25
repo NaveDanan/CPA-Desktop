@@ -376,7 +376,7 @@ def unit(install_dir, data_dir, node, name, user, import_file):
         return '"' + value + '"'
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', user):
         raise ValueError('Unsupported service user name.')
-    command = [node, str(Path(install_dir) / 'launcher.cjs'), 'serve', '--host', '127.0.0.1', '--port', os.environ['CPA_API_PORT'], '--name', name, '--data-dir', data_dir]
+    command = [node, str(Path(install_dir) / 'launcher.cjs'), 'serve', '--host', '0.0.0.0', '--port', os.environ['CPA_API_PORT'], '--name', name, '--data-dir', data_dir]
     if import_file and not (Path(data_dir) / 'config.yaml').exists():
         command += ['--import-config', import_file]
     return '\n'.join(['# CPA headless setup wizard', '[Unit]', 'Description=CPA headless environment',
@@ -659,52 +659,45 @@ else note 'No downloaded archive was selected. Cleanup is not needed.'; fi
 pause 'Press Enter for the PC connection steps.'
 
 stage 'Connect this VM to CPA Desktop'
-say 'Do the next actions on your PC. Keep this VM terminal open.'
-cpa_default CPA_SSH_TARGET 'SSH login used from your PC, such as agent@vm-address:' "$(id -un)@$(hostname)"
-[[ "$CPA_SSH_TARGET" =~ ^[A-Za-z0-9_.-]+@[A-Za-z0-9._:-]+$ ]] || cpa_fail 'Use an SSH target such as agent@vm-address, with no spaces or options.'
-cpa_default CPA_SSH_PORT 'SSH server port used from your PC:' '22'
-[[ "$CPA_SSH_PORT" =~ ^[0-9]{1,5}$ ]] && (( 10#$CPA_SSH_PORT >= 1 && 10#$CPA_SSH_PORT <= 65535 )) || cpa_fail 'Use an SSH port from 1 to 65535.'
-CPA_SSH_PORT=$(( 10#$CPA_SSH_PORT ))
-say 'Choose a different PC port for each VM: 18318 for VM 1, 18328 for VM 2, and so on.'
-cpa_default CPA_LOCAL_PORT 'PC connection port:' '18318'
-cpa_port "$CPA_LOCAL_PORT" || cpa_fail 'Use a PC connection port from 1025 to 65535.'
-CPA_LOCAL_PORT=$(( 10#$CPA_LOCAL_PORT ))
-[[ "$CPA_LOCAL_PORT" -gt 1024 ]] || cpa_fail 'Use a PC connection port from 1025 to 65535.'
-CPA_LOCAL_MANAGEMENT_PORT=$(( 10#$CPA_LOCAL_PORT - 1 ))
-write_env CPA_SSH_TARGET "$CPA_SSH_TARGET"
-write_env CPA_SSH_PORT "$CPA_SSH_PORT"
-write_env CPA_LOCAL_PORT "$CPA_LOCAL_PORT"
-write_env CPA_LOCAL_MANAGEMENT_PORT "$CPA_LOCAL_MANAGEMENT_PORT"
-say 'On your PC, run this one-line command in a separate terminal. Keep it open:'
-printf '  ssh -N -p %s -o ExitOnForwardFailure=yes -L %s:127.0.0.1:%s -L %s:127.0.0.1:%s %s\n' "$CPA_SSH_PORT" "$CPA_LOCAL_PORT" "$CPA_API_PORT" "$CPA_LOCAL_MANAGEMENT_PORT" "$CPA_PROXY_PORT" "$CPA_SSH_TARGET"
-step 'Open CPA Desktop > Dashboard > Manage environments.'
+say 'CPA accepts direct connections on the VM connection port.'
+say "Allow TCP port $CPA_API_PORT from your PC in the VM firewall or network rules."
+say 'The proxy port stays private. The connection token controls remote access.'
+cpa_default CPA_VM_ADDRESS 'VM IP address your PC can reach:' "$(hostname -I | awk '{print $1}')"
+python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$CPA_VM_ADDRESS" || cpa_fail 'Enter the VM IPv4 or IPv6 address without a port.'
+write_env CPA_VM_ADDRESS "$CPA_VM_ADDRESS"
+CPA_CONNECTION_HOST="$CPA_VM_ADDRESS"
+[[ "$CPA_CONNECTION_HOST" != *:* ]] || CPA_CONNECTION_HOST="[$CPA_CONNECTION_HOST]"
+CPA_CONNECTION_URL="http://$CPA_CONNECTION_HOST:$CPA_API_PORT"
+step 'On your PC, open CPA Desktop > CLI and Environments.'
 say "Name: $CPA_VM_NAME"
-say "Address: http://127.0.0.1:$CPA_LOCAL_PORT"
+say "Address: $CPA_CONNECTION_URL"
 step 'Paste the connection token from stage 6, then click Connect.'
-say 'If you need the token again, run this on the VM:'
+say 'Keep the sync option checked to copy your PC provider sign-ins and saved CLI models.'
+say 'To display the token again on this VM:'
 printf '  %q %q token --data-dir %q\n' "$CPA_NODE_BIN" "$CPA_INSTALL_DIR/launcher.cjs" "$CPA_DATA_DIR"
 if confirm 'Did CPA Desktop connect to this VM?'; then write_env CPA_DESKTOP_CONNECTED yes; else
   write_env CPA_DESKTOP_CONNECTED no
-  SKIPPED+=("Connect CPA Desktop to http://127.0.0.1:$CPA_LOCAL_PORT using the VM token.")
+  SKIPPED+=("Connect CPA Desktop to $CPA_CONNECTION_URL using the VM token.")
 fi
 
-stage 'Sign in to providers on the VM'
-say 'The browser is on your PC. Open this address there:'
-say "http://127.0.0.1:$CPA_LOCAL_MANAGEMENT_PORT/management.html"
-say 'Use this management key to log in to that page:'
-"$CPA_NODE_BIN" -p 'JSON.parse(require("node:fs").readFileSync(require("node:path").join(process.argv[1],"desktop-secrets.json"),"utf8")).managementKey' "$CPA_DATA_DIR"
-step 'Open OAuth and choose the provider this VM will use, such as GitHub Copilot.'
-step 'Complete the sign-in instructions shown for that provider.'
-say 'Each VM uses its own provider accounts.'
-if confirm 'Have you completed provider sign-in on this VM?'; then write_env CPA_PROVIDER_SETUP done; else
+stage 'Manage providers and models from your PC'
+step 'Open CPA Desktop > CLI and Environments.'
+step 'Next to this VM, click Models and providers to see its accounts and models.'
+say 'To use the same accounts as your PC, set Sync from to This computer.'
+step 'Select this VM, then click Sync providers to selected.'
+say 'You can also use Connect provider in this VM detail area for a separate sign-in.'
+step 'Choose local CLI models below and click Apply to CLIs.'
+step 'Select the VM and click Sync models to selected, or use Sync both to all.'
+say 'The page shows a separate result for each machine. Update older CPA versions first.'
+if confirm 'Have you completed provider and model setup?'; then write_env CPA_PROVIDER_SETUP done; else
   write_env CPA_PROVIDER_SETUP pending
-  SKIPPED+=("Provider sign-in at http://127.0.0.1:$CPA_LOCAL_MANAGEMENT_PORT/management.html")
+  SKIPPED+=("Finish providers and models in CPA Desktop > CLI and Environments.")
 fi
 
 finish
 say 'The CPA service starts when the VM boots, even without a login.'
 say 'Its token stays the same unless you rotate it or remove the saved state.'
-say 'Reopen the PC SSH tunnel if it disconnects.'
+say "Connect directly to $CPA_CONNECTION_URL. No SSH tunnel is needed."
 say 'Service status: sudo systemctl status cpa --no-pager'
 say 'Service logs: sudo journalctl -u cpa -n 50 --no-pager'
 say 'Show the connection token again:'

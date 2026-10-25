@@ -102,7 +102,7 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
       }
       config.model_providers ||= {};
       config.model_providers.cliproxy_copilot = {
-        name: 'GitHub Copilot via CLIProxyAPI', base_url: `${connection.origin}/v1`,
+        name: 'CLIProxyAPI', base_url: `${connection.origin}/v1`,
         wire_api: 'responses', experimental_bearer_token: connection.apiKey,
       };
       if (entries.every((entry) => entry.supports_search_tool === true)) {
@@ -137,7 +137,7 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
       config.availableModels = ids;
       config.modelPicker = {
         replaceBuiltInOptions: true,
-        options: ids.map((id) => ({ model: id, label: models.find((model) => model.id === id).display_name || id, description: 'GitHub Copilot via CLIProxyAPI' })),
+        options: ids.map((id) => ({ model: id, label: models.find((model) => model.id === id).display_name || id, description: 'CLIProxyAPI' })),
       };
       files.push([file, JSON.stringify(config, null, 2) + '\n']);
     }
@@ -196,12 +196,14 @@ function createHarnessService(runtime: { configPath: string; origin: string; man
   }
   async function discover() {
     const auth = await get('/v8/management/credentials', runtime.managementKey);
-    const accounts = (auth.files || []).filter((account) => (account.provider === 'github-copilot' || account.type === 'github-copilot') && !account.disabled);
+    const accounts = (auth.files || []).filter((account) => !account.disabled);
     const byID = new Map<string, CopilotModel>();
     for (const account of accounts) {
       const result = await get(`/v8/management/credentials/models?name=${encodeURIComponent(account.name)}`, runtime.managementKey);
       for (const model of result.models || []) byID.set(model.id, model);
     }
+    const advertised = await get('/v1/models', connection().apiKey);
+    for (const model of advertised.data || []) if (!byID.has(model.id)) byID.set(model.id, model);
     return [...byID.values()].filter((model) => {
       const name = model.id.split('/').pop();
       return !name.startsWith('claude-') || !name.includes('.') || !byID.has(model.id.replaceAll('.', '-'));

@@ -4,19 +4,56 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
-  <title>Configure CLI</title>
+  <title>CLI and Environments</title>
   <link rel="stylesheet" href="harness.css">
   <script src="harness-renderer.js" defer></script>
 </head>
 <body><main>
-  <header><div><h1>Configure CLI</h1><p>Choose which GitHub Copilot models appear in each CLI.</p></div><div class="header-actions"><button id="restore" type="button" disabled>Restore Defaults</button><button id="refresh" type="button">Refresh models</button></div></header>
+  <header><div><h1>CLI and Environments</h1><p>Connect machines, manage provider sign-ins, and choose CLI models.</p></div><div class="header-actions"><button id="restore" type="button" disabled>Restore Defaults</button><button id="refresh" type="button">Refresh models</button></div></header>
+  <section id="environment-manager" aria-labelledby="environments-title">
+    <div class="section-heading"><h2 id="environments-title">Environments</h2><button id="environment-refresh" type="button">Check connections</button></div>
+    <p>Connect to a PC or VM using its IP address, connection port, and token from <code>cpa token</code>.</p>
+    <details id="computer-connection"><summary>Connect other machines to this computer</summary>
+      <form id="computer-connection-form" class="environment-actions"><label><input id="computer-enabled" type="checkbox"> Allow connections to this computer</label><label>Connection port<input id="computer-port" type="number" min="1024" max="65535" value="8318" required></label><button type="submit">Save connection settings</button><button id="computer-token-show" type="button">Show connection token</button></form>
+      <p id="computer-addresses"></p><label id="computer-token-label" hidden>Connection token<input id="computer-token" type="password" readonly autocomplete="off"></label>
+      <p class="environment-note">Allow the connection port from your other machines in the firewall. This setting and token persist when the desktop app starts with your computer.</p>
+    </details>
+    <form id="environment-connect" class="connect-form">
+      <label>Name<input id="environment-name" required maxlength="80" autocomplete="off" placeholder="Development VM"></label>
+      <label>Address<input id="environment-address" type="url" required autocomplete="off" placeholder="http://192.168.1.50:8318"></label>
+      <label>Connection token<input id="environment-token" type="password" minlength="32" maxlength="512" autocomplete="off" spellcheck="false" required></label>
+      <div class="environment-actions"><button id="environment-save" type="submit">Connect</button><button id="environment-cancel" type="button" hidden>Cancel edit</button></div>
+      <label class="sync-choice"><input id="environment-initial-sync" type="checkbox" checked> Sync this computer's provider sign-ins and saved CLI models after connecting</label>
+    </form>
+    <p id="environment-message" role="status" aria-live="polite"></p>
+    <div id="environment-list"></div>
+    <div class="sync-controls">
+      <label>Sync from<select id="environment-source"><option value="local">This computer</option></select></label>
+      <div class="environment-actions"><button id="environment-models" type="button" disabled>Sync models to selected</button><button id="environment-providers" type="button" disabled>Sync providers to selected</button><button id="environment-all" type="button">Sync both to all</button><button id="environment-version" type="button" disabled>Update selected versions</button></div>
+    </div>
+    <p class="environment-note">Sync uses the source's saved CLI choices and OAuth credential files. Matching account files are updated; other accounts and each machine's CLI paths stay in place. Apply local CLI choices below before syncing models. Direct HTTP connections are intended for your trusted private network.</p>
+    <ul id="environment-results" aria-live="polite"></ul>
+    <section id="environment-detail" hidden aria-labelledby="environment-detail-title">
+      <h3 id="environment-detail-title"></h3><p id="environment-detail-status" role="status"></p>
+      <h4>Available models</h4><div id="environment-detail-models"></div>
+      <h4>Saved CLI models</h4><div id="environment-detail-selection"></div>
+      <h4>Provider connections</h4><div id="environment-detail-providers"></div>
+      <form id="provider-connect" class="environment-actions"><label>Provider<select id="provider-name"><option value="github-copilot">GitHub Copilot</option><option value="codex">OpenAI subscription</option><option value="claude">Claude subscription</option><option value="antigravity">Antigravity</option><option value="kimi">Kimi</option><option value="kimi-ai">Kimi AI</option><option value="xai">xAI</option><option value="devin">Devin</option><option value="meta">Meta</option></select></label><button type="submit">Connect provider</button></form>
+      <div id="provider-session" hidden>
+        <p id="provider-instructions"></p><label>Sign-in URL<input id="provider-url" readonly></label><button id="provider-open" type="button">Open sign-in page</button>
+        <label id="provider-callback-label">Completed callback URL<input id="provider-callback" type="url" placeholder="Paste the final localhost URL if the browser cannot reach it"></label>
+        <div class="environment-actions"><button id="provider-complete" type="button">Submit callback</button><button id="provider-check" type="button">Check sign-in</button><button id="provider-cancel" type="button">Cancel sign-in</button></div>
+      </div>
+    </section>
+  </section>
+  <h2 class="local-cli-title">CLI models on this computer</h2>
   <p id="status" role="status" aria-live="polite">Loading available models…</p>
   <form id="setup">
     <div id="clients"></div>
     <section class="models" aria-labelledby="models-title">
       <div class="model-heading"><h2 id="models-title">Available models <span id="count"></span></h2><label>Find a model<input id="search" type="search" placeholder="Search by name or ID"></label></div>
-      <div class="table-wrap"><table><thead><tr><th scope="col">GitHub Copilot model</th><th scope="col">Codex CLI</th><th scope="col">Claude Code CLI</th></tr></thead><tbody id="model-rows"></tbody></table></div>
-      <p id="empty" hidden>No Copilot models found. Connect a GitHub Copilot account in OAuth, then refresh.</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Model</th><th scope="col">Codex CLI</th><th scope="col">Claude Code CLI</th></tr></thead><tbody id="model-rows"></tbody></table></div>
+      <p id="empty" hidden>No models found. Connect a provider above, then refresh.</p>
     </section>
     <footer><p>Original files are backed up. Keep the desktop proxy running and restart your CLIs after applying. Claude Code model menus require v2.1.242 or later.</p><button id="apply" type="submit" class="primary" disabled>Apply to CLIs</button></footer>
   </form>

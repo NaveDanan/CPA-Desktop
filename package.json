@@ -1,6 +1,6 @@
 {
   "name": "cliproxy-desktop",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "The CLIProxyAPI management center for Windows, Linux, and connected headless environments",
   "author": "CLIProxyAPI contributors",
   "license": "MIT",
@@ -51,6 +51,8 @@
       "smoke.cjs",
       "harness*.cjs",
       "environments.cjs",
+      "headless.cjs",
+      "headless-update.cjs",
       "harness.html",
       "harness.css",
       "harness-renderer.js",
@@ -87,7 +89,12 @@
       "target": "nsis",
       "icon": "assets/icon.ico",
       "signExecutable": false,
-      "extraResources": [{ "from": "resources/cli-proxy-api.exe", "to": "proxy/cli-proxy-api.exe" }]
+      "extraResources": [
+        {
+          "from": "resources/cli-proxy-api.exe",
+          "to": "proxy/cli-proxy-api.exe"
+        }
+      ]
     },
     "linux": {
       "target": "AppImage",
@@ -95,7 +102,12 @@
       "category": "Development",
       "executableName": "cpa-desktop",
       "syncDesktopName": true,
-      "extraResources": [{ "from": "resources/cli-proxy-api", "to": "proxy/cli-proxy-api" }],
+      "extraResources": [
+        {
+          "from": "resources/cli-proxy-api",
+          "to": "proxy/cli-proxy-api"
+        }
+      ],
       "artifactName": "CLIProxyAPI-Desktop-${version}-linux-${arch}.${ext}"
     },
     "nsis": {

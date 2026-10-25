@@ -365,9 +365,9 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     button.id = 'desktop-cli-models';
     button.type = 'button';
     button.className = 'nav-item';
-    button.title = 'Configure CLI';
-    button.setAttribute('aria-label', 'Configure CLI');
-    button.innerHTML = '<span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></span><span class="nav-text"><span class="nav-label">Configure CLI</span></span>';
+    button.title = 'CLI and Environments';
+    button.setAttribute('aria-label', 'CLI and Environments');
+    button.innerHTML = '<span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></span><span class="nav-text"><span class="nav-label">CLI and Environments</span></span>';
     const usageButton = document.createElement('button');
     usageButton.id = 'desktop-copilot-usage';
     usageButton.type = 'button';
@@ -383,7 +383,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     const pane = document.createElement('iframe');
     pane.id = 'desktop-cli-content';
     pane.name = 'desktop-cli-content';
-    pane.title = 'Configure CLI';
+    pane.title = 'CLI and Environments';
     pane.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
     pane.hidden = true;
     const usagePane = document.createElement('iframe');
@@ -399,7 +399,7 @@ if (origin && location.origin === origin && location.pathname === '/management.h
     dashboardPane.title = 'Usage and cost';
     dashboardPane.setAttribute('sandbox', 'allow-scripts allow-forms');
     let dashboardLoading = false;
-    const environmentActions = ['environments', 'connectEnvironment', 'removeEnvironment', 'refreshEnvironments', 'bulkEnvironments'];
+    const environmentActions = ['environments', 'connectEnvironment', 'editEnvironment', 'environmentDetails', 'providerAction', 'openProviderURL', 'computerConnection', 'configureComputerConnection', 'removeEnvironment', 'refreshEnvironments', 'bulkEnvironments'];
     const allowed = new Set(['load', 'inspect', 'browse', 'apply', 'restore', 'theme', 'usage', 'dashboard', ...environmentActions]);
     window.addEventListener('message', async (event) => {
       const message = event.data;
@@ -410,8 +410,8 @@ if (origin && location.origin === origin && location.pathname === '/management.h
         return;
       }
       if (!source || message?.channel !== 'harness:request' || !allowed.has(message.name) || !Array.isArray(message.args) ||
-        (source === usagePane && !['usage', 'theme'].includes(message.name)) || (source === dashboardPane && !['dashboard', 'theme', ...environmentActions].includes(message.name)) ||
-        (source === pane && (message.name === 'dashboard' || environmentActions.includes(message.name)))) return;
+        (source === usagePane && !['usage', 'theme'].includes(message.name)) || (source === dashboardPane && !['dashboard', 'theme', 'environments'].includes(message.name)) ||
+        (source === pane && message.name === 'dashboard')) return;
       try {
         const result = await ipcRenderer.invoke('harness:' + message.name, ...message.args);
         source.contentWindow?.postMessage({ channel: 'harness:response', id: message.id, ...result }, '*');

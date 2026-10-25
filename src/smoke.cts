@@ -1,6 +1,7 @@
 import fs = require('node:fs');
 import path = require('node:path');
 import assert = require('node:assert/strict');
+import net = require('node:net');
 import { setTimeout as delay } from 'node:timers/promises';
 import { app, nativeImage, BrowserWindow } from 'electron';
 
@@ -208,7 +209,8 @@ async function run({ window, runtime, tray, outputDir, backendPid }: { window: E
   const accountCount = (auth.files || []).filter((file: AuthAccount) => file.provider === 'github-copilot' || file.type === 'github-copilot').length;
   {
     assert.ok(await contents.executeJavaScript(`!!document.getElementById('desktop-cli-models')`), 'CLI setup button exists');
-    assert.ok(await contents.executeJavaScript(`document.getElementById('desktop-cli-models').closest('.nav-group') === document.querySelector('.sidebar a[href="#/config"]').closest('.nav-group')`), 'Configure CLI belongs to Controls');
+    assert.ok(await contents.executeJavaScript(`document.getElementById('desktop-cli-models').closest('.nav-group') === document.querySelector('.sidebar a[href="#/config"]').closest('.nav-group')`), 'CLI and Environments belongs to Controls');
+    assert.equal(await contents.executeJavaScript(`document.getElementById('desktop-cli-models').textContent.trim()`), 'CLI and Environments');
     const windowCount = BrowserWindow.getAllWindows().length;
     await contents.executeJavaScript("document.getElementById('desktop-cli-models').click()");
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -227,6 +229,21 @@ async function run({ window, runtime, tray, outputDir, backendPid }: { window: E
       if (await setup.webContents.executeJavaScript(`!!document.getElementById('codex-path')`)) break;
       await delay(100);
     }
+    assert.ok(await setup.webContents.executeJavaScript(`!!document.getElementById('environment-manager')`), 'Environment management is in the CLI page');
+    const probe = net.createServer();
+    await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+    const connectionPort = (probe.address() as net.AddressInfo).port;
+    await new Promise<void>(resolve => probe.close(() => resolve()));
+    const connection = await setup.webContents.executeJavaScript(`window.harness.configureComputerConnection(true, ${connectionPort})`) as ComputerConnection;
+    assert.equal(connection.enabled, true);
+    const address = 'http://127.0.0.1:' + connectionPort + '/api/environment/v1';
+    assert.equal((await fetch(address + '/info')).status, 401, 'Shared desktop requires a connection token');
+    const shared = await fetch(address + '/details', { headers: { Authorization: 'Bearer ' + connection.token } });
+    assert.equal(shared.status, 200, 'Shared desktop exposes models and provider metadata');
+    const details = await shared.text();
+    assert.ok(!details.includes(connection.token) && !details.includes(runtime.managementKey), 'Shared details omit management and connection tokens');
+    await setup.webContents.executeJavaScript(`window.harness.configureComputerConnection(false, ${connectionPort})`);
+    assert.equal((await setup.webContents.executeJavaScript('window.harness.computerConnection(true)') as ComputerConnection).token, connection.token, 'Disabling sharing preserves the connection token');
     const configDir = path.join(outputDir, 'cli-configs');
     fs.mkdirSync(configDir, { recursive: true });
     await setup.webContents.executeJavaScript(`

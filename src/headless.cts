@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { option, prepareConfig, assertPortFree } from './runtime.cjs';
 import { createHarnessService } from './harness-config.cjs';
-import { atomicJSON, portableSelection, validateBoundaries } from './environments.cjs';
+import { atomicJSON, portableSelection, validateBoundaries, createProviderService, environmentDetails } from './environments.cjs';
 import { stageRelease } from './headless-update.cjs';
 
 const API = '/api/environment/v1';
@@ -43,6 +43,7 @@ function createEnvironmentServer(options: {
   dashboard(boundaries: number[], refresh: boolean): Promise<UsageDashboard>;
   load(): Promise<HarnessLoad>; apply(selection: CliSelections): Promise<HarnessSave>;
   sync?(version: string): Promise<() => void>;
+  providers?: ReturnType<typeof createProviderService>;
 }) {
   identity(options.userData);
   let writing = false;
@@ -65,11 +66,21 @@ function createEnvironmentServer(options: {
         validateBoundaries(input.boundaries);
         send(200, await options.dashboard(input.boundaries, input.refreshPricing === true)); return;
       }
-      if (req.method !== 'POST' || ![API + '/models/apply', API + '/version/sync'].includes(route)) { send(404, { error: 'Not found' }); req.resume(); return; }
+      if (req.method === 'GET' && route === API + '/details' && options.providers) {
+        send(200, environmentDetails(await options.load(), await options.providers.list())); return;
+      }
+      if (req.method !== 'POST' || ![API + '/models/apply', API + '/version/sync', API + '/providers/action', API + '/providers/export', API + '/providers/import'].includes(route)) { send(404, { error: 'Not found' }); req.resume(); return; }
       if (writing) { send(409, { error: 'An operation is already running' }); req.resume(); return; }
       writing = true;
       try {
         const input = await body(req);
+        if (route.startsWith(API + '/providers/') && options.providers) {
+          if (route.endsWith('/action')) send(200, await options.providers.action(input));
+          else if (route.endsWith('/export')) send(200, await options.providers.export());
+          else send(200, await options.providers.import(input));
+          return;
+        }
+        if (route.startsWith(API + '/providers/')) { send(409, { error: 'Provider management is unavailable. Update this environment.' }); return; }
         if (route === API + '/models/apply') {
           const selection = vmSelection(input.selection, await options.load());
           const saved = await options.apply(selection);
@@ -159,6 +170,7 @@ async function main(args = process.argv.slice(2)) {
       userData, version, name: option(args, '--name') || os.hostname(),
       dashboard: (boundaries, refresh) => localDashboard(runtime, boundaries, refresh),
       load: service.load, apply: service.apply,
+      providers: createProviderService(runtime),
       ...(process.send && process.env.CPA_INSTALL_ROOT ? { sync: async (target: string) => {
         const release = await stageRelease(process.env.CPA_INSTALL_ROOT, target);
         return () => process.send?.({ type: 'activate', release, version: target });

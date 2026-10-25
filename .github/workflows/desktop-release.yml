@@ -102,3 +102,6 @@ jobs:
         run: |
           gh release view "$RELEASE_TAG"
           find ../dist/desktop -maxdepth 1 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name 'CPA-Headless-*.tar.gz' \) -exec gh release upload "$RELEASE_TAG" '{}' --clobber \;
+          if [[ "${{ matrix.platform }}" == linux && "${{ matrix.arch }}" == x64 ]]; then
+            gh release upload "$RELEASE_TAG" scripts/setup-headless.sh --clobber
+          fi

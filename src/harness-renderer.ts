@@ -165,6 +165,153 @@ $('restore-form').addEventListener('submit', async (event) => {
     restoreDialog.querySelector('fieldset').disabled = false;
   }
 });
+let environmentItems: EnvironmentView[] = [];
+const environmentSelected = new Set<string>();
+let environmentBusy = false;
+let editingEnvironment = '';
+let inspectedEnvironment = '';
+let signIn: { id: string; provider: string; state: string; url: string } | null = null;
+const envNode = (id: string) => document.getElementById(id)!;
+const envInput = (id: string) => envNode(id) as HTMLInputElement;
+const envButton = (text: string, action: () => void) => { const button = element('button', text); button.type = 'button'; button.addEventListener('click', action); return button; };
+function renderComputerConnection(value: ComputerConnection) {
+  envInput('computer-enabled').checked = value.enabled; envInput('computer-port').value = String(value.port);
+  envNode('computer-addresses').textContent = value.error || (value.enabled ? value.addresses.join('\n') : 'Connections to this computer are disabled.');
+  if (value.token) { envNode('computer-token-label').hidden = false; envInput('computer-token').value = value.token; envInput('computer-token').type = 'text'; }
+}
+envNode('computer-connection-form').addEventListener('submit', event => { event.preventDefault(); void environmentOperation(async () => {
+  renderComputerConnection(await window.harness.configureComputerConnection(envInput('computer-enabled').checked, Number(envInput('computer-port').value)));
+  environmentMessage('Connection settings saved.');
+}); });
+envNode('computer-token-show').addEventListener('click', () => void environmentOperation(async () => {
+  if (!envNode('computer-token-label').hidden) { envNode('computer-token-label').hidden = true; envInput('computer-token').value = ''; envNode('computer-token-show').textContent = 'Show connection token'; }
+  else { renderComputerConnection(await window.harness.computerConnection(true)); envNode('computer-token-show').textContent = 'Hide connection token'; }
+}));
+function environmentMessage(message: string, error = false) { envNode('environment-message').textContent = message; envNode('environment-message').className = error ? 'error' : ''; }
+function environmentControls() {
+  for (const node of envNode('environment-manager').querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select')) node.disabled = environmentBusy;
+  for (const id of ['environment-models', 'environment-providers', 'environment-version']) (envNode(id) as HTMLButtonElement).disabled = environmentBusy || !environmentSelected.size;
+  (envNode('environment-all') as HTMLButtonElement).disabled = environmentBusy || environmentItems.length < 2;
+}
+async function environmentOperation(action: () => Promise<void>) {
+  if (environmentBusy) return;
+  environmentBusy = true; environmentControls();
+  try { await action(); } catch (error) { environmentMessage(error.message || 'Environment operation failed.', true); }
+  finally { environmentBusy = false; environmentControls(); }
+}
+function resetConnection() {
+  editingEnvironment = ''; (envNode('environment-connect') as HTMLFormElement).reset();
+  envInput('environment-token').required = true; envInput('environment-token').placeholder = '';
+  envNode('environment-save').textContent = 'Connect'; envNode('environment-cancel').hidden = true;
+  envInput('environment-initial-sync').parentElement.hidden = false;
+}
+function renderEnvironmentList() {
+  const picker = envNode('environment-source') as HTMLSelectElement; const source = picker.value;
+  picker.replaceChildren(...environmentItems.map(item => new Option(item.name, item.id)));
+  picker.value = environmentItems.some(item => item.id === source) ? source : 'local';
+  for (const id of environmentSelected) if (!environmentItems.some(item => item.id === id)) environmentSelected.delete(id);
+  envNode('environment-list').replaceChildren(...environmentItems.map(item => {
+    const row = element('div', undefined, 'environment-row'); const label = element('label');
+    const check = element('input'); check.type = 'checkbox'; check.checked = environmentSelected.has(item.id); check.setAttribute('aria-label', 'Select ' + item.name);
+    check.addEventListener('change', () => { check.checked ? environmentSelected.add(item.id) : environmentSelected.delete(item.id); environmentControls(); });
+    const name = element('span'); name.append(element('strong', item.name), element('small', item.address)); label.append(check, name);
+    const state = element('span', `${item.version ? 'v' + item.version + ' · ' : ''}${item.status}`, 'environment-state');
+    if (item.error || item.updateError) state.append(element('small', item.error || item.updateError, 'error'));
+    const inspect = envButton('Models and providers', () => void environmentOperation(() => inspectEnvironment(item.id)));
+    inspect.setAttribute('aria-label', 'Models and providers on ' + item.name); row.append(label, state, inspect);
+    if (item.id !== 'local') {
+      const edit = envButton('Edit', () => {
+        editingEnvironment = item.id; envInput('environment-name').value = item.name; envInput('environment-address').value = item.address;
+        envInput('environment-token').value = ''; envInput('environment-token').required = false; envInput('environment-token').placeholder = 'Leave blank to keep the saved token';
+        envNode('environment-save').textContent = 'Save connection'; envNode('environment-cancel').hidden = false;
+        envInput('environment-initial-sync').parentElement.hidden = true; envInput('environment-name').focus();
+      });
+      const remove = envButton('Disconnect', () => void environmentOperation(async () => {
+        environmentItems = await window.harness.removeEnvironment(item.id); environmentSelected.delete(item.id);
+        if (editingEnvironment === item.id) resetConnection();
+        if (inspectedEnvironment === item.id) { inspectedEnvironment = ''; envNode('environment-detail').hidden = true; }
+        if (signIn?.id === item.id) { signIn = null; envNode('provider-session').hidden = true; }
+        renderEnvironmentList(); environmentMessage(item.name + ' disconnected.');
+      }));
+      edit.setAttribute('aria-label', 'Edit ' + item.name); remove.setAttribute('aria-label', 'Disconnect ' + item.name); row.append(edit, remove);
+    }
+    return row;
+  })); environmentControls();
+}
+async function inspectEnvironment(id: string) {
+  environmentMessage('Loading models and provider connections...');
+  const detail = await window.harness.environmentDetails(id); inspectedEnvironment = id;
+  envNode('environment-detail').hidden = false; envNode('environment-detail-title').textContent = environmentItems.find(item => item.id === id)?.name || id;
+  envNode('environment-detail-status').textContent = detail.modelError || `${detail.models.length} models · ${detail.providers.length} provider connections`;
+  envNode('environment-detail-models').replaceChildren(...(detail.models.length ? detail.models.map(model => element('div', model.display_name ? model.display_name + ' · ' + model.id : model.id)) : [element('p', 'No available models. Connect a provider and refresh.')]));
+  envNode('environment-detail-selection').replaceChildren(...(Object.entries(detail.selection).length ? Object.entries(detail.selection).map(([key, value]) => element('p', `${names[key] || key}: ${value.enabled ? (value.all ? 'All available models' : value.models.join(', ')) + (value.defaultModel ? ' · default ' + value.defaultModel : '') : 'Disabled'}`)) : [element('p', 'No CLI model choices saved yet.')]));
+  envNode('environment-detail-providers').replaceChildren(...(detail.providers.length ? detail.providers.map(account => {
+    const row = element('div', undefined, 'provider-account'); row.append(element('span', `${account.provider} · ${account.name} · ${account.disabled ? 'Disabled' : account.status || 'Enabled'}`));
+    const toggle = envButton(account.disabled ? 'Enable' : 'Disable', () => void environmentOperation(async () => { await window.harness.providerAction(id, { action: 'toggle', name: account.name, disabled: !account.disabled }); await inspectEnvironment(id); if (id === 'local') await load(); }));
+    toggle.setAttribute('aria-label', `${account.disabled ? 'Enable' : 'Disable'} ${account.name}`); row.append(toggle); return row;
+  }) : [element('p', 'No provider connections. Sign in below or sync them from another environment.')]));
+  environmentMessage('Models and provider connections loaded.');
+}
+async function runEnvironmentSync(actions: ('models' | 'providers' | 'version')[], ids: string[], source = (envNode('environment-source') as HTMLSelectElement).value) {
+  const results: EnvironmentOutcome[] = [];
+  let targets = ids;
+  for (const action of actions) {
+    environmentMessage(action === 'version' ? 'Updating versions and waiting for restart...' : 'Syncing ' + action + '...');
+    const outcomes = await window.harness.bulkEnvironments(action, targets, source);
+    results.push(...outcomes.map(item => ({ ...item, message: action + ': ' + item.message })));
+    // Never apply models to a machine whose provider sync failed.
+    if (action === 'providers') targets = targets.filter(id => outcomes.some(item => item.id === id && item.ok));
+    if (!targets.length) break;
+  }
+  envNode('environment-results').replaceChildren(...results.map(result => element('li', `${environmentItems.find(item => item.id === result.id)?.name || result.id}: ${result.message}`, result.ok ? '' : 'error')));
+  const failed = results.some(item => !item.ok);
+  environmentItems = await window.harness.refreshEnvironments(); renderEnvironmentList();
+  if (inspectedEnvironment) await inspectEnvironment(inspectedEnvironment);
+  if (ids.includes('local') && source !== 'local') await load();
+  environmentMessage(failed ? 'Some environments could not be updated. See the results below.' : 'Sync complete. Restart affected CLIs to load their models.', failed);
+}
+envNode('environment-connect').addEventListener('submit', event => {
+  event.preventDefault();
+  const value = { name: envInput('environment-name').value.trim(), address: envInput('environment-address').value.trim(), token: envInput('environment-token').value };
+  const sync = !editingEnvironment && envInput('environment-initial-sync').checked;
+  envInput('environment-token').value = '';
+  void environmentOperation(async () => {
+    environmentMessage(editingEnvironment ? 'Checking and saving connection...' : 'Connecting...');
+    const previous = new Set(environmentItems.map(item => item.id));
+    environmentItems = editingEnvironment ? await window.harness.editEnvironment(editingEnvironment, value) : await window.harness.connectEnvironment(value);
+    const added = environmentItems.filter(item => !previous.has(item.id)).map(item => item.id); for (const id of added) environmentSelected.add(id);
+    resetConnection(); renderEnvironmentList(); environmentMessage(value.name + ' connected.');
+    if (sync && added.length) await runEnvironmentSync(['providers', 'models'], added, 'local');
+  });
+});
+envNode('environment-cancel').addEventListener('click', resetConnection);
+envNode('environment-refresh').addEventListener('click', () => void environmentOperation(async () => { environmentMessage('Checking connections...'); environmentItems = await window.harness.refreshEnvironments(); renderEnvironmentList(); if (inspectedEnvironment) await inspectEnvironment(inspectedEnvironment); else environmentMessage('Connections checked.'); }));
+for (const action of ['models', 'providers', 'version'] as const) envNode('environment-' + action).addEventListener('click', () => void environmentOperation(() => runEnvironmentSync([action], [...environmentSelected])));
+envNode('environment-all').addEventListener('click', () => void environmentOperation(() => runEnvironmentSync(['providers', 'models'], environmentItems.map(item => item.id))));
+envNode('provider-connect').addEventListener('submit', event => {
+  event.preventDefault(); if (!inspectedEnvironment) return;
+  void environmentOperation(async () => {
+    if (signIn) await window.harness.providerAction(signIn.id, { action: 'cancel', state: signIn.state });
+    const provider = (envNode('provider-name') as HTMLSelectElement).value;
+    const result = await window.harness.providerAction(inspectedEnvironment, { action: 'start', provider });
+    signIn = { id: inspectedEnvironment, provider, state: result.state, url: result.url };
+    envNode('provider-session').hidden = false; envInput('provider-url').value = result.url; envInput('provider-callback').value = '';
+    envNode('provider-instructions').textContent = result.user_code ? 'Open the sign-in page and enter this device code: ' + result.user_code : 'Complete sign-in in your browser. If the final localhost page cannot open, paste its full URL below.';
+    envNode('provider-callback-label').hidden = result.flow === 'device'; envNode('provider-complete').hidden = result.flow === 'device';
+    environmentMessage('Sign-in started for ' + (environmentItems.find(item => item.id === inspectedEnvironment)?.name || inspectedEnvironment) + '.');
+  });
+});
+envNode('provider-open').addEventListener('click', () => { if (signIn) void environmentOperation(async () => { await window.harness.openProviderURL(signIn.url); }); });
+envNode('provider-complete').addEventListener('click', () => void environmentOperation(async () => { if (!signIn) return; const redirect = envInput('provider-callback').value; envInput('provider-callback').value = ''; await window.harness.providerAction(signIn.id, { action: 'callback', provider: signIn.provider, state: signIn.state, redirect }); environmentMessage('Callback submitted. Check sign-in to confirm.'); }));
+envNode('provider-check').addEventListener('click', () => void environmentOperation(async () => {
+  if (!signIn) return;
+  const result = await window.harness.providerAction(signIn.id, { action: 'status', state: signIn.state });
+  if (result.status === 'ok') { const id = signIn.id; signIn = null; envNode('provider-session').hidden = true; await inspectEnvironment(id); if (id === 'local') await load(); environmentMessage('Provider connected. Sync providers and models to share this connection.'); }
+  else environmentMessage(result.status === 'wait' ? 'Waiting for browser sign-in. Complete it, then check again.' : 'Sign-in failed or expired. Start a new sign-in.', result.status !== 'wait');
+}));
+envNode('provider-cancel').addEventListener('click', () => void environmentOperation(async () => { if (signIn) await window.harness.providerAction(signIn.id, { action: 'cancel', state: signIn.state }); signIn = null; envNode('provider-session').hidden = true; envInput('provider-callback').value = ''; environmentMessage('Sign-in cancelled.'); }));
+void window.harness.environments().then(items => { environmentItems = items; renderEnvironmentList(); }).catch(error => environmentMessage(error.message, true));
+void window.harness.computerConnection().then(renderComputerConnection).catch(error => environmentMessage(error.message, true));
 void load();
 
 })();

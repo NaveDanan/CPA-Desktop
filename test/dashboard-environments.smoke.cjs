@@ -26,17 +26,12 @@ app.whenReady().then(async () => {
   const run = code => window.webContents.executeJavaScript(code);
   const wait = expression => run(`new Promise(resolve=>{const check=()=>{if(${expression}){observer.disconnect();resolve()}};const observer=new MutationObserver(check);observer.observe(document.body,{subtree:true,childList:true,attributes:true});check()})`);
   await window.loadFile(path.resolve(__dirname, '../dashboard.html'));
-  await wait(`document.querySelectorAll('.environment-row').length===2 && document.querySelector('#combined-chart svg')`);
+  await wait(`document.querySelector('#environment-scope').options.length===3 && document.querySelector('#combined-chart svg')`);
   assert.equal(lastScope, 'all');
   assert.match(await run(`document.getElementById('environment-coverage').textContent`), /1 of 2 environments/);
-  await run(`document.getElementById('environment-manager').open=true;document.getElementById('environment-scope').value='local';document.getElementById('environment-scope').dispatchEvent(new Event('change'))`);
+  assert.equal(await run(`document.getElementById('environment-manager')`), null, 'management moved to CLI and Environments');
+  await run(`document.getElementById('environment-scope').value='local';document.getElementById('environment-scope').dispatchEvent(new Event('change'))`);
   await wait(`document.getElementById('environment-coverage').hidden`); assert.equal(lastScope, 'local');
-  await run(`document.getElementById('environment-name').value='Staging VM';document.getElementById('environment-address').value='http://staging-vm:8318';document.getElementById('environment-token').value='fixture-token-000000000000000000000000';document.getElementById('environment-connect').requestSubmit()`);
-  await wait(`document.querySelectorAll('.environment-row').length===3 && !document.getElementById('environment-models').disabled`);
-  assert.equal(saved.name, 'Staging VM'); assert.equal(await run(`document.getElementById('environment-token').value`), '');
-  await run(`document.getElementById('environment-models').click()`);
-  await wait(`document.getElementById('environment-results').textContent.includes('Models applied') && !document.getElementById('environment-models').disabled`);
-  assert.deepEqual(bulk, { action: 'models', ids: ['staging'] });
   await run(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
   fs.writeFileSync(path.join(output, 'wide-light.png'), (await window.webContents.capturePage()).toPNG());
   window.setSize(620, 1000);
@@ -44,6 +39,6 @@ app.whenReady().then(async () => {
   await run(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
   assert.equal(await run(`document.documentElement.scrollWidth<=innerWidth`), true, 'compact dashboard has no horizontal overflow');
   fs.writeFileSync(path.join(output, 'compact-dark.png'), (await window.webContents.capturePage()).toPNG());
-  fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ passed: true, checks: ['combined graph', 'offline coverage', 'environment scope', 'connect form', 'token cleared', 'selected bulk models', 'compact layout'] }, null, 2));
+  fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ passed: true, checks: ['combined graph', 'offline coverage', 'environment scope', 'management moved', 'compact layout'] }, null, 2));
   clearTimeout(timer); console.log('Dashboard environments smoke passed'); app.exit(0);
 }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

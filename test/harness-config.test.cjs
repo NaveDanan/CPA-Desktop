@@ -247,7 +247,7 @@ test('a failed replacement rolls back files already replaced', (t) => {
   assert.equal(fs.readFileSync(selection.claude.path, 'utf8'), 'original claude');
   assert.ok(!fs.readdirSync(selection.root).some((file) => file.endsWith('.tmp')));
 });
-test('live discovery filters disabled and non-Copilot accounts, deduplicates models, and uses current API key', async (t) => {
+test('live discovery includes enabled providers, deduplicates models, and uses current API key', async (t) => {
   const selection = fixture(t); const configPath = path.join(selection.root, 'proxy.yaml');
   fs.writeFileSync(configPath, 'api-keys: [current-key]');
   const calls = [];
@@ -263,7 +263,8 @@ test('live discovery filters disabled and non-Copilot accounts, deduplicates mod
   assert.equal((await service.load()).models.length, 2);
   await service.apply(selection);
   assert.ok(calls.find((call) => call.url.includes('client_version') && call.authorization === 'Bearer current-key'));
-  assert.ok(!calls.some((call) => call.url.includes('name=disabled') || call.url.includes('name=other')));
+  assert.ok(!calls.some((call) => call.url.includes('name=disabled')));
+  assert.ok(calls.some((call) => call.url.includes('name=other')), 'subscription providers also contribute models');
   assert.equal((await service.load()).saved.codex.path, selection.codex.path);
   assert.ok(!fs.readFileSync(path.join(selection.root, 'harness-settings.json'), 'utf8').includes('current-key'));
 });

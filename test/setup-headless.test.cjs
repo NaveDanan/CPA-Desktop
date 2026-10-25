@@ -127,8 +127,10 @@ test('headless setup wizard helpers preserve unrelated files and credentials', {
     const verified = spawnSync('systemd-analyze', ['verify', unit], { encoding: 'utf8' });
     assert.equal(verified.status, 0, verified.stderr);
     assert.notEqual(run('unit', install, data, '/usr/bin/node', 'VM\nExecStart=bad', os.userInfo().username, '').status, 0);
-    const predicate = wizard.split('\n').find(line => line.startsWith('[[ "$CPA_SSH_TARGET" =~')).split(' || ')[0];
-    for (const target of ['agent@vm-address', 'agent@192.168.1.50', 'agent@2001:db8::1']) assert.equal(spawnSync('bash', ['-c', 'CPA_SSH_TARGET="$1"; ' + predicate, 'test', target]).status, 0);
-    for (const target of ['-oProxyCommand=bad', 'agent@vm;touch bad', 'agent@$(bad)']) assert.notEqual(spawnSync('bash', ['-c', 'CPA_SSH_TARGET="$1"; ' + predicate, 'test', target]).status, 0);
+    assert.ok(result.stdout.includes('"--host" "0.0.0.0"'), 'service accepts direct VM connections');
+    assert.ok(!wizard.includes('ssh -N'), 'setup does not require a PC tunnel');
+    const predicate = wizard.split('\n').find(line => line.startsWith("python3 -c 'import ipaddress,sys;" )).split(' || ')[0];
+    for (const target of ['192.168.1.50', '2001:db8::1']) assert.equal(spawnSync('bash', ['-c', 'CPA_VM_ADDRESS="$1"; ' + predicate, 'test', target]).status, 0);
+    for (const target of ['-oProxyCommand=bad', '192.168.1.50;touch bad', '$(bad)']) assert.notEqual(spawnSync('bash', ['-c', 'CPA_VM_ADDRESS="$1"; ' + predicate, 'test', target]).status, 0);
   });
 });

@@ -4,6 +4,12 @@ type PortableSelections = Record<string, Pick<CliSelection, 'enabled' | 'all' | 
 interface EnvironmentInfo { protocol: 1; id: string; name: string; version: string; platform: string; arch: string; updateError?: string }
 interface EnvironmentView { id: string; name: string; address: string; version?: string; status: 'connected' | 'offline' | 'unchecked'; error?: string; checkedAt?: string; updateError?: string }
 interface EnvironmentOutcome { id: string; ok: boolean; message: string }
+interface ProviderAccount { name: string; provider: string; disabled: boolean; status?: string }
+interface ProviderBundle { files: { name: string; content: Record<string, unknown> }[] }
+interface EnvironmentDetails { models: CopilotModel[]; selection: PortableSelections; providers: ProviderAccount[]; modelError?: string }
+interface ProviderAction { action: 'start' | 'status' | 'callback' | 'cancel' | 'toggle'; provider?: string; state?: string; redirect?: string; name?: string; disabled?: boolean }
+interface ProviderResult { status?: string; url?: string; state?: string; flow?: string; user_code?: string }
+interface ComputerConnection { enabled: boolean; port: number; addresses: string[]; token?: string; error?: string }
 interface EnvironmentUsage { id: string; name: string; available: boolean; error?: string; checkedAt: string }
 type CliSelections = Record<string, CliSelection>;
 interface HarnessTheme { name: string; tokens: Record<string, string> }
@@ -35,13 +41,19 @@ interface HarnessAPI {
   usage(period: string, start?: string, end?: string, refreshPricing?: boolean): Promise<CopilotUsageSummary>;
   environments(): Promise<EnvironmentView[]>;
   connectEnvironment(value: {name: string; address: string; token: string}): Promise<EnvironmentView[]>;
+  editEnvironment(id: string, value: {name: string; address: string; token?: string}): Promise<EnvironmentView[]>;
+  environmentDetails(id: string): Promise<EnvironmentDetails>;
+  providerAction(id: string, value: ProviderAction): Promise<ProviderResult>;
+  openProviderURL(url: string): Promise<void>;
+  computerConnection(showToken?: boolean): Promise<ComputerConnection>;
+  configureComputerConnection(enabled: boolean, port: number): Promise<ComputerConnection>;
   removeEnvironment(id: string): Promise<EnvironmentView[]>;
   refreshEnvironments(): Promise<EnvironmentView[]>;
-  bulkEnvironments(action: 'models' | 'version', ids: string[]): Promise<EnvironmentOutcome[]>;
+  bulkEnvironments(action: 'models' | 'version' | 'providers', ids: string[], source?: string): Promise<EnvironmentOutcome[]>;
   dashboard(boundaries: number[], refreshPricing?: boolean, scope?: string): Promise<UsageDashboard>;
   onTheme(callback: (theme: HarnessTheme) => void): void;
 }
 interface Window { harness: HarnessAPI }
 interface CatalogModel { slug: string; supported_reasoning_levels?: { effort: string }[]; [key: string]: unknown }
 interface AuthAccount { name: string; provider?: string; type?: string; disabled?: boolean }
-interface DiscoveryResponse { files?: AuthAccount[]; models?: (CopilotModel & CatalogModel)[] }
+interface DiscoveryResponse { files?: AuthAccount[]; models?: (CopilotModel & CatalogModel)[]; data?: CopilotModel[] }
