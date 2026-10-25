@@ -25,6 +25,8 @@ The wizard checks Node.js, installs CPA in its own folder, creates a system serv
 
 The setup wizard adds the installation folder to PATH in `~/.bashrc` and `~/.profile`, so `cpa --help` works in new terminals. It also prints the `export PATH=...` command for the terminal that launched the wizard. Existing installations can use `export PATH="$HOME/.local/opt/cpa:$PATH"` immediately and add that line to `~/.bashrc` to retain it.
 
+When the selected archive is newer than an existing CPA installation, the wizard installs it in a separate versioned folder, such as `~/.local/opt/cpa-1.4.0`. It keeps the old runtime and reuses the saved data directory, accounts, and token. After confirmation it updates the boot service and checks both APIs. If the new service fails its checks, it restores the previous service definition.
+
 Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
 
 ```sh

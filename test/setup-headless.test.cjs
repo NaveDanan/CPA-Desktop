@@ -78,6 +78,24 @@ test('headless setup wizard helpers preserve unrelated files and credentials', {
     assert.equal(fs.readFileSync(path.join(install, 'cpa'), 'utf8'), files.cpa.toString());
   });
 
+  await t.test('upgrading an older installation chooses a separate folder and retains saved data', () => {
+    const previous = path.join(root, 'upgrade', 'cpa'); ok('install', archive, previous);
+    const upgraded = { ...files, 'headless.cjs': Buffer.from('new headless implementation'), 'package.json': Buffer.from('{"name":"cpa-headless","version":"1.4.0"}') };
+    const nextArchive = path.join(root, 'next.tar.gz');
+    fs.writeFileSync(nextArchive, gzipSync(Buffer.concat([...Object.entries(upgraded).map(([name, bytes]) => tarFile(name, bytes, name === 'cpa' || name === 'resources/cli-proxy-api')), Buffer.alloc(1024)])));
+    assert.notEqual(run('install', nextArchive, previous).status, 0, 'never overlay the old runtime');
+    const destination = ok('destination', nextArchive, previous, data);
+    assert.equal(destination.directory, previous + '-1.4.0');
+    assert.equal(destination.previous, previous);
+    ok('install', nextArchive, destination.directory);
+    assert.equal(ok('installed', destination.directory).version, '1.4.0');
+    assert.equal(fs.readFileSync(path.join(previous, 'headless.cjs'), 'utf8'), 'headless');
+    assert.equal(fs.readFileSync(state, 'utf8'), '{"token":"fixture-private-token"}');
+    assert.equal(ok('destination', nextArchive, destination.directory, data).directory, destination.directory);
+    assert.notEqual(run('destination', archive, destination.directory, data).status, 0, 'do not downgrade an existing runtime');
+    assert.notEqual(run('destination', nextArchive, previous, destination.directory).status, 0, 'runtime and state cannot overlap');
+  });
+
   await t.test('cleanup removes only identical archive files and leaves changed and unrelated files', () => {
     const loose = path.join(root, 'earlier-extraction'); ok('install', archive, loose);
     fs.writeFileSync(path.join(loose, 'notes.txt'), 'my notes');

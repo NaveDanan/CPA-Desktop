@@ -309,6 +309,30 @@ def installed(directory):
         binary = stream.read(64)
     return metadata(json.loads((root / 'package.json').read_text()), binary)
 
+def destination(archive, directory, data_directory):
+    version = inspect(archive)[0]['version']
+    root = root_path(directory)
+    previous = ''
+    package_file = target(root, 'package.json')
+    if package_file.exists():
+        if package_file.stat().st_size > 65536:
+            raise ValueError('Installed package metadata is too large.')
+        package = json.loads(package_file.read_text())
+        if package.get('name') != 'cpa-headless':
+            raise ValueError('The installation folder belongs to another application.')
+        if package.get('version') != version:
+            old_version = installed(str(root))['version']
+            if tuple(map(int, version.split('.'))) < tuple(map(int, old_version.split('.'))):
+                raise ValueError('The selected archive is older than the installed CPA version. Choose the current or a newer archive.')
+            previous = str(root)
+            suffix = '-' + old_version
+            base = root.name[:-len(suffix)] if root.name.endswith(suffix) else root.name
+            root = root_path(str(root.parent / (base + '-' + version)))
+    data = root_path(data_directory)
+    if root == data or root in data.parents or data in root.parents:
+        raise ValueError('Keep installation and saved data folders separate.')
+    return {'directory': str(root), 'previous': previous, 'version': version}
+
 def install(archive, directory):
     result, entries = inspect(archive)
     root = root_path(directory)
@@ -402,6 +426,8 @@ try:
         result = installed(args[0])
     elif action == 'install':
         result = install(*args)
+    elif action == 'destination':
+        result = destination(*args)
     elif action in ('plan', 'clean'):
         result = cleanup(*args, delete=action == 'clean')
     elif action == 'verify-release':
@@ -468,7 +494,7 @@ CPA_NODE_BIN=''
 CPA_WORK=''
 cpa_temp_cleanup() {
   if [[ -n "$CPA_WORK" && "$CPA_WORK" == /tmp/cpa-setup.* ]]; then
-    rm -f -- "$CPA_WORK/node-setup.sh" "$CPA_WORK/archive.json" "$CPA_WORK/release.json" "$CPA_WORK/cpa.service" "$CPA_WORK/cleanup-plan.json"
+    rm -f -- "$CPA_WORK/node-setup.sh" "$CPA_WORK/archive.json" "$CPA_WORK/release.json" "$CPA_WORK/destination.json" "$CPA_WORK/cpa.service" "$CPA_WORK/cleanup-plan.json"
     rmdir -- "$CPA_WORK" 2>/dev/null || true
   fi
 }
@@ -554,6 +580,7 @@ export PATH="$CPA_NODE_DIR:$PATH"
 write_env CPA_NODE_BIN "$CPA_NODE_BIN"
 
 stage 'Verify and install CPA in its own folder'
+CPA_PREVIOUS_INSTALL_DIR=''
 if [[ -n "$CPA_ARCHIVE" ]]; then
   cpa_archive inspect "$CPA_ARCHIVE" > "$CPA_WORK/archive.json"
   CPA_VERSION=$(cpa_field "$CPA_WORK/archive.json" version)
@@ -561,7 +588,18 @@ if [[ -n "$CPA_ARCHIVE" ]]; then
   say "Checking the published SHA-256 for CPA $CPA_VERSION."
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 60 "https://api.github.com/repos/NaveDanan/CPA-Desktop/releases/tags/v$CPA_VERSION" -o "$CPA_WORK/release.json"
   cpa_archive verify-release "$CPA_ARCHIVE" "$CPA_WORK/release.json" > /dev/null
+  cpa_archive destination "$CPA_ARCHIVE" "$CPA_INSTALL_DIR" "$CPA_DATA_DIR" > "$CPA_WORK/destination.json"
+  CPA_NEXT_INSTALL_DIR=$(cpa_field "$CPA_WORK/destination.json" directory)
+  CPA_PREVIOUS_INSTALL_DIR=$(cpa_field "$CPA_WORK/destination.json" previous)
+  if [[ "$CPA_NEXT_INSTALL_DIR" != "$CPA_INSTALL_DIR" ]]; then
+    say "The older CPA installation will remain in $CPA_INSTALL_DIR."
+    say "CPA $CPA_VERSION will be installed in $CPA_NEXT_INSTALL_DIR."
+    say "Saved accounts, tokens, and configuration stay in $CPA_DATA_DIR."
+    confirm 'Install the new version in this separate folder?' || exit 0
+    CPA_INSTALL_DIR="$CPA_NEXT_INSTALL_DIR"
+  fi
   cpa_archive install "$CPA_ARCHIVE" "$CPA_INSTALL_DIR" > /dev/null
+  write_env CPA_INSTALL_DIR "$CPA_INSTALL_DIR"
   write_env CPA_ARCHIVE_SHA256 "$CPA_ARCHIVE_SHA256"
 else
   cpa_archive installed "$CPA_INSTALL_DIR" > "$CPA_WORK/archive.json"
@@ -595,13 +633,18 @@ say "Service: $CPA_UNIT"
 say "Runs as: $(id -un)"
 say 'The service uses your selected data folder. It starts at boot without a desktop login.'
 confirm 'Write the service and start or restart CPA?' || exit 0
+CPA_UNIT_BACKUP=''
 if sudo test -L "$CPA_UNIT"; then cpa_fail 'The service file is a symbolic link. Inspect it before replacing it.'; fi
 if sudo test -f "$CPA_UNIT"; then
   sudo grep -q '^Description=CPA headless environment$' "$CPA_UNIT" || cpa_fail 'An unrelated cpa.service already exists. It was not changed.'
-  sudo cp -p -- "$CPA_UNIT" "$CPA_UNIT.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  CPA_UNIT_BACKUP="$CPA_UNIT.backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  sudo cp -p -- "$CPA_UNIT" "$CPA_UNIT_BACKUP"
 fi
 if systemctl --user is-active --quiet cpa.service 2>/dev/null || systemctl --user is-enabled --quiet cpa.service 2>/dev/null; then
-  systemctl --user show cpa.service --property=ExecStart --value | grep -Fq -- "$CPA_INSTALL_DIR" || cpa_fail 'A user service from a different folder exists. Stop it before continuing.'
+  CPA_USER_COMMAND=$(systemctl --user show cpa.service --property=ExecStart --value)
+  if [[ "$CPA_USER_COMMAND" != *"$CPA_INSTALL_DIR"* && ( -z "$CPA_PREVIOUS_INSTALL_DIR" || "$CPA_USER_COMMAND" != *"$CPA_PREVIOUS_INSTALL_DIR"* ) ]]; then
+    cpa_fail 'A user service from a different folder exists. Stop it before continuing.'
+  fi
   confirm 'Replace the existing user CPA service with this boot service?' || exit 0
   systemctl --user disable --now cpa.service
 fi
@@ -623,6 +666,12 @@ for (( CPA_ATTEMPT=0; CPA_ATTEMPT<30; CPA_ATTEMPT++ )); do
 done
 printf '\n'
 if [[ "$CPA_READY" != yes ]]; then
+  if [[ -n "$CPA_UNIT_BACKUP" ]]; then
+    sudo install -m 0644 -- "$CPA_UNIT_BACKUP" "$CPA_UNIT"
+    sudo systemctl daemon-reload
+    sudo systemctl restart cpa.service
+    say 'The previous service definition was restored because the new service did not become ready.'
+  fi
   say 'Read the error with: sudo journalctl -u cpa -n 50 --no-pager'
   cpa_fail 'CPA did not become ready. The archive and saved data were kept.'
 fi
