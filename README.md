@@ -23,6 +23,8 @@ bash cpa-setup.sh
 
 The wizard checks Node.js, installs CPA in its own folder, creates a system service that starts at boot, generates or reuses the connection token, and guides the direct desktop connection and centralized provider setup. The wizard binds the connection API to `0.0.0.0` and asks for the VM IP address. Allow its TCP connection port, normally 8318, from your PC in the VM firewall/network rules. The proxy stays on loopback port 8317. No SSH tunnel is needed. It asks before deleting the archive. It can also remove matching files from an earlier flat extraction, while retaining changed files, unrelated files, and saved state. Public setup choices are saved in `~/.local/state/cpa-setup/settings.env`, or under `$XDG_STATE_HOME/cpa-setup`. Generated credentials remain in CPA's data folder. Run the wizard again after a partial setup to reuse those choices. Do not pipe the download directly into Bash; the wizard needs your terminal for its prompts.
 
+The setup wizard adds the installation folder to PATH in `~/.bashrc` and `~/.profile`, so `cpa --help` works in new terminals. It also prints the `export PATH=...` command for the terminal that launched the wizard. Existing installations can use `export PATH="$HOME/.local/opt/cpa:$PATH"` immediately and add that line to `~/.bashrc` to retain it.
+
 Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
 
 ```sh

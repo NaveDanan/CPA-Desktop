@@ -40,6 +40,17 @@ test('headless setup wizard helpers preserve unrelated files and credentials', {
   });
 
   const install = path.join(root, 'installed');
+  await t.test('PATH setup preserves profiles, supports spaces, and is repeatable', () => {
+    const directory = path.join(root, 'command path $literal'); fs.mkdirSync(directory);
+    const command = path.join(directory, 'cpa'); fs.writeFileSync(command, '#!/bin/sh\nprintf "CPA path works\\n"\n', { mode: 0o755 });
+    const profile = path.join(root, 'bashrc'); fs.writeFileSync(profile, '# Keep existing settings\nexport CPA_EXISTING_SETTING=retained\n');
+    const call = spawnSync('bash', ['-c', 'source "$1"; cpa_add_to_path "$2" "$3"; cpa_add_to_path "$2" "$3"; cpa', 'test', wizardPath, directory, profile], { encoding: 'utf8' });
+    assert.equal(call.status, 0, call.stderr); assert.match(call.stdout, /CPA path works/);
+    const content = fs.readFileSync(profile, 'utf8'); assert.match(content, /CPA_EXISTING_SETTING=retained/);
+    assert.equal((content.match(/# CPA headless PATH/g) || []).length, 1);
+    const fresh = spawnSync('bash', ['--noprofile', '--norc', '-c', 'source "$1"; source "$1"; command -v cpa; cpa; printf "%s" "$CPA_EXISTING_SETTING"', 'test', profile], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } });
+    assert.equal(fresh.status, 0, fresh.stderr); assert.ok(fresh.stdout.includes(command)); assert.match(fresh.stdout, /CPA path works/); assert.match(fresh.stdout, /retained$/);
+  });
   const data = path.join(root, 'saved-data'); fs.mkdirSync(data);
   const state = path.join(data, 'environment-auth.json'); fs.writeFileSync(state, '{"token":"fixture-private-token"}');
   await t.test('installs inside the chosen directory and safely reuses matching files', () => {

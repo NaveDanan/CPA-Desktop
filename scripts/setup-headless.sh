@@ -199,6 +199,15 @@ cpa_path() {
 }
 cpa_field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"; }
 cpa_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1024 && 10#$1 <= 65535 )); }
+cpa_add_to_path() {
+  local directory="$1" profile="$2" quoted line
+  [[ -x "$directory/cpa" && "$directory" != *:* && ! "$directory" =~ [[:cntrl:]] ]] || cpa_fail 'Choose an executable CPA installation path without colons or control characters.'
+  [[ ! -e "$profile" || -f "$profile" ]] || cpa_fail "Shell profile is not a file: $profile"
+  printf -v quoted '%q' "$directory"
+  line='case ":$PATH:" in *:'"$quoted"':*) ;; *) export PATH='"$quoted"':"$PATH" ;; esac # CPA headless PATH'
+  if ! grep -Fqx -- "$line" "$profile" 2>/dev/null; then printf '\n%s\n' "$line" >> "$profile"; fi
+  case ":$PATH:" in *":$directory:"*) ;; *) export PATH="$directory:$PATH" ;; esac
+}
 
 cpa_archive() {
   python3 - "$@" <<'CPA_ARCHIVE_PY'
@@ -560,6 +569,9 @@ else
 fi
 write_env CPA_VERSION "$CPA_VERSION"
 "$CPA_INSTALL_DIR/cpa" help > /dev/null
+cpa_add_to_path "$CPA_INSTALL_DIR" "$HOME/.bashrc"
+cpa_add_to_path "$CPA_INSTALL_DIR" "$HOME/.profile"
+say 'The cpa command is now configured for new Bash and login shells.'
 CPA_PROXY_PORT=$("$CPA_NODE_BIN" - "$CPA_INSTALL_DIR" "$CPA_DATA_DIR" "$CPA_IMPORT_CONFIG" <<'CPA_PORT_JS'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -702,3 +714,5 @@ say 'Service status: sudo systemctl status cpa --no-pager'
 say 'Service logs: sudo journalctl -u cpa -n 50 --no-pager'
 say 'Show the connection token again:'
 printf '  %q %q token --data-dir %q\n' "$CPA_NODE_BIN" "$CPA_INSTALL_DIR/launcher.cjs" "$CPA_DATA_DIR"
+say 'To enable the cpa command in the terminal that launched this wizard, run:'
+printf '  export PATH=%q:"$PATH"\n' "$CPA_INSTALL_DIR"
