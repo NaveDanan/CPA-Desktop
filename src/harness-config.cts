@@ -105,10 +105,17 @@ function buildFiles(selection: CliSelections, models: CopilotModel[], catalog: C
         name: 'GitHub Copilot via CLIProxyAPI', base_url: `${connection.origin}/v1`,
         wire_api: 'responses', experimental_bearer_token: connection.apiKey,
       };
-      // ChatGPT app connectors add ~700 KB of tool declarations to every request, which
-      // fills most of the context window and forces compaction every few turns.
-      appsManaged = saved.codex?.appsManaged === true || config.features?.apps !== false;
-      config.features = { ...config.features, apps: false };
+      if (entries.every((entry) => entry.supports_search_tool === true)) {
+        // Tool discovery loads connectors on demand. Retire only our old workaround.
+        if (saved.codex?.appsManaged && config.features?.apps === false) {
+          delete config.features.apps;
+          if (!Object.keys(config.features).length) delete config.features;
+        }
+      } else {
+        // Without discovery, connector declarations can fill most of the prompt.
+        appsManaged = saved.codex?.appsManaged === true || config.features?.apps !== false;
+        config.features = { ...config.features, apps: false };
+      }
       files.push([catalogPath, JSON.stringify({ models: entries.map((entry, priority) => ({ ...entry, visibility: 'list', supported_in_api: true, priority })) }, null, 2) + '\n']);
       files.push([file, TOML.stringify(config)]);
     } else {

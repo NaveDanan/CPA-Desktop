@@ -6,7 +6,7 @@ on:
         description: Version tag matching package.json, for example v1.3.0
         required: true
       management_url:
-        description: HTTPS URL of the exact management.html to bundle
+        description: HTTPS URL or this repository's release-asset API URL for the exact management.html
         required: true
       management_sha256:
         description: Expected SHA-256 of management.html
@@ -61,10 +61,15 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           MANAGEMENT_URL: ${{ inputs.management_url }}
           MANAGEMENT_SHA256: ${{ inputs.management_sha256 }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node -e 'if(process.env.RELEASE_TAG !== "v" + require("./package.json").version) throw Error("Version tag mismatch")'
           node -e 'const u=new URL(process.env.MANAGEMENT_URL); if(u.protocol!=="https:" || !/^[a-f0-9]{64}$/i.test(process.env.MANAGEMENT_SHA256)) throw Error("Invalid UI source")'
-          curl --fail --location --proto '=https' --proto-redir '=https' "$MANAGEMENT_URL" -o management-release.html
+          if [[ "$MANAGEMENT_URL" =~ ^https://api\.github\.com/repos/NaveDanan/CPA-Desktop/releases/assets/[0-9]+$ ]]; then
+            gh api -H 'Accept: application/octet-stream' "$MANAGEMENT_URL" > management-release.html
+          else
+            curl --fail --location --proto '=https' --proto-redir '=https' "$MANAGEMENT_URL" -o management-release.html
+          fi
           node -e 'const fs=require("fs"), c=require("crypto"); if(c.createHash("sha256").update(fs.readFileSync("management-release.html")).digest("hex")!==process.env.MANAGEMENT_SHA256.toLowerCase()) throw Error("UI checksum mismatch")'
       - run: npm run prepare:resources -- --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --ui management-release.html
       - run: npm test

@@ -1,5 +1,7 @@
 # CLIProxyAPI Desktop
 
+Version 1.3.2 fixes frequent compaction in Codex and T3 Code when GPT models are routed through Copilot. The bundled proxy preserves deferred tool discovery on supported Responses routes, so Codex loads connector definitions as needed. After updating, refresh models, apply your CLI settings again, and restart Codex/T3 sessions. The setup removes its earlier connector-disabling workaround when every selected model supports discovery, while preserving your own connector setting.
+
 ## Linux desktop and connected VMs
 
 The Linux desktop ships as `CLIProxyAPI-Desktop-<version>-linux-x86_64.AppImage` or `linux-arm64.AppImage`. Make it executable with `chmod +x <file>.AppImage`, then run it. On distributions without FUSE 2, install the distribution's FUSE compatibility library or run with `--appimage-extract-and-run`. Desktop VM tokens are encrypted by the OS credential store. Linux needs an unlocked GNOME Keyring or KWallet to save a connection.
@@ -109,7 +111,7 @@ Claude versions use Anthropic's hyphenated spelling, such as `claude-sonnet-5-1`
 
 Default files are `~/.codex/config.toml` and `~/.claude/settings.json`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` overrides are honored. Edit a path, use **Browse**, or restore its default. Custom paths must be files your CLI actually loads; selecting another path does not change the CLI's configuration directory.
 
-The app merges settings, saves a Codex model catalog alongside its config, and creates uniquely named `.cliproxy-*.bak` backups before replacing existing files. Codex's ChatGPT app connectors are turned off (`features.apps = false`) because their tool definitions add about 700 KB to every request and force frequent compaction; **Restore Defaults** turns them back on unless you had disabled them yourself. TOML formatting and comments may change; unrelated settings are preserved. Selections and paths persist between launches. **Refresh models** reloads the current account models; apply again to update CLI menus when available models change.
+The app merges settings, saves a Codex model catalog alongside its config, and creates uniquely named `.cliproxy-*.bak` backups before replacing existing files. Supported Copilot Responses routes keep Codex's tool discovery enabled, so connector definitions load on demand instead of filling each request. When every selected model supports discovery, applying again removes the older proxy-owned `features.apps = false` workaround. Your own connector setting is preserved. Routes without discovery retain that workaround; **Restore Defaults** removes it only when CPA owns it. TOML formatting and comments may change; unrelated settings are preserved. Selections and paths persist between launches. **Refresh models** reloads the current account models; apply again to update CLI menus when available models change.
 
 **Restore Defaults** opens a dialog with both CLIs selected. Uncheck either CLI to keep its configuration, then confirm. This removes the proxy's connection and model settings at the displayed paths and preserves unrelated preferences and sign-ins. Existing files are backed up first. It also works when model discovery is unavailable. Restart the selected CLIs afterward.
 
