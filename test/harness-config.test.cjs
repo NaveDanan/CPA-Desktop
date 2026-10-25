@@ -139,6 +139,40 @@ test('Codex app connectors are disabled while routed and restored only when the 
   assert.equal(TOML.parse(fs.readFileSync(selection.codex.path, 'utf8')).features.apps, false);
 });
 
+test('Codex keeps connectors available when every selected route supports tool discovery', (t) => {
+  const selection = fixture(t);
+  selection.claude.enabled = false;
+  const deferredCatalog = catalog.map((model) => ({ ...model, supports_search_tool: true }));
+  for (const apps of [undefined, true, false]) {
+    fs.writeFileSync(selection.codex.path, TOML.stringify({ features: { hooks: true, ...(apps === undefined ? {} : { apps }) } }));
+    const result = buildFiles(selection, models, deferredCatalog, connection);
+    writeFiles(result.files);
+    const config = TOML.parse(fs.readFileSync(selection.codex.path, 'utf8'));
+    assert.equal(config.features.apps, apps);
+    assert.equal(config.features.hooks, true);
+    assert.equal(result.normalized.codex.appsManaged, undefined);
+    const entries = JSON.parse(fs.readFileSync(config.model_catalog_json)).models;
+    assert.equal(entries[0].supports_search_tool, true);
+  }
+});
+
+test('Codex removes the old proxy-owned connector workaround after discovery is fixed', (t) => {
+  const selection = fixture(t);
+  selection.claude.enabled = false;
+  fs.writeFileSync(selection.codex.path, '[features]\nhooks = true\n');
+  const legacy = buildFiles(selection, models, catalog, connection);
+  writeFiles(legacy.files);
+  assert.equal(legacy.normalized.codex.appsManaged, true);
+  const deferredCatalog = catalog.map((model) => ({ ...model, supports_search_tool: true }));
+  const updated = buildFiles(selection, models, deferredCatalog, connection, legacy.normalized);
+  writeFiles(updated.files);
+  assert.equal(updated.normalized.codex.appsManaged, undefined);
+  assert.deepEqual(TOML.parse(fs.readFileSync(selection.codex.path, 'utf8')).features, { hooks: true });
+  const reapplied = buildFiles(selection, models, deferredCatalog, connection, updated.normalized);
+  writeFiles(reapplied.files);
+  assert.deepEqual(TOML.parse(fs.readFileSync(selection.codex.path, 'utf8')).features, { hooks: true });
+});
+
 test('restore resets selected CLI settings and preserves unrelated preferences', (t) => {
   const selection = fixture(t);
   fs.writeFileSync(selection.codex.path, '[mcp_servers.example]\ncommand = "example"\n[model_providers.other]\nname = "Other"\n');
