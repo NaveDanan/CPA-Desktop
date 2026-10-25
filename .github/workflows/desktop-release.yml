@@ -57,6 +57,12 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - run: npm ci
+      - name: Make Node available to systemd unit validation
+        if: matrix.platform == 'linux'
+        run: |
+          if [[ ! -x /usr/bin/node ]]; then
+            sudo ln -s "$(command -v node)" /usr/bin/node
+          fi
       - name: Install Windows Electron runtime
         if: matrix.platform == 'win32'
         run: node node_modules/electron/install.js

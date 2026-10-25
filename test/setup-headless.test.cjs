@@ -117,7 +117,7 @@ test('headless setup wizard helpers preserve unrelated files and credentials', {
   });
 
   await t.test('service uses the launcher and public inputs cannot become extra commands', () => {
-    const result = run('unit', install, data, '/usr/bin/node', 'VM "$HOME" %n', os.userInfo().username, '');
+    const result = run('unit', install, data, process.execPath, 'VM "$HOME" %n', os.userInfo().username, '');
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /launcher\.cjs/);
     assert.match(result.stdout, /WantedBy=multi-user.target/);
