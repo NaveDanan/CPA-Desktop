@@ -10,6 +10,15 @@ Startup uses the original AppImage file and the same app data directory, so save
 
 Linux tray display depends on the desktop's StatusNotifier/AppIndicator support. GNOME installations without tray support need an [AppIndicator extension](https://github.com/ubuntu/gnome-shell-extension-appindicator) to display the icon. CPA remains available in the application drawer while running in the background.
 
+For an interactive Ubuntu VM setup, run the [headless setup wizard](scripts/setup-headless.sh) as your normal SSH user. Start from the folder containing the downloaded headless archive:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NaveDanan/CPA-Desktop/main/scripts/setup-headless.sh -o cpa-setup.sh
+bash cpa-setup.sh
+```
+
+The wizard checks Node.js, installs CPA in its own folder, creates a system service that starts at boot, generates or reuses the connection token, and guides the desktop connection and provider sign-in. It asks before deleting the archive. It can also remove matching files from an earlier flat extraction, while retaining changed files, unrelated files, and saved state. Public setup choices are saved in `~/.local/state/cpa-setup/settings.env`, or under `$XDG_STATE_HOME/cpa-setup`. Generated credentials remain in CPA's data folder. Run the wizard again after a partial setup to reuse those choices. Do not pipe the download directly into Bash; the wizard needs your terminal for its prompts.
+
 Headless VMs use the separate `CPA-Headless-<version>-linux-<arch>.tar.gz` archive and Node.js 22 or later. The archive includes the Go proxy and production JavaScript dependencies, and does not need Electron or an npm install. Extract into a permanent, writable directory under the service user's home:
 
 ```sh
